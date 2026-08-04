@@ -1,6 +1,6 @@
 # Nazar’s School of Mathematics
 
-Professional landing site and parent application form for online mathematics tutoring for grades 5–12.
+Professional landing site and parent application form for online tutoring for students in middle school through 11th grade.
 
 ## Run locally
 
