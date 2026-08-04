@@ -4,6 +4,11 @@ export const site = {
   email: 'nazar.drygalo@gmail.com',
   phoneDisplay: '+1 408-460-3643',
   phoneHref: 'tel:+14084603643',
+  academicSupport: {
+    name: 'Ariana',
+    email: 'arianaakatev7@gmail.com',
+    bio: 'Ariana is Nazar’s School of Mathematics’ science and essay-writing specialist. With several years of mentoring and tutoring experience, she brings the same thoughtful, individualized approach to science and written work.'
+  },
   grades: 'Grades 5–12',
   subjects: [
     'Foundational math skills',
