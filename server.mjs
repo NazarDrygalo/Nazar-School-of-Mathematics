@@ -24,16 +24,10 @@ function sendJson(res, status, body) {
 }
 function clean(value, max = 2000) { return typeof value === 'string' ? value.trim().slice(0, max) : '' }
 function escapeHtml(value) { return value.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[c]) }
-function formatPhone(value) {
-  const digits = clean(value, 50).replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '')
-  if (digits.length === 10) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
-  return clean(value)
-}
 function isValidApplication(data) {
-  const required = ['serviceArea', 'studentFirstName', 'studentLastName', 'age', 'grade', 'school', 'currentCourse', 'helpAreas', 'academicGoals', 'parentFirstName', 'parentLastName', 'email', 'phone', 'contactMethod', 'days', 'times', 'timezone']
+  const required = ['serviceArea', 'studentFirstName', 'studentLastName', 'age', 'gender', 'grade', 'currentCourse', 'parentFirstName', 'parentLastName', 'email']
   if (required.some((key) => !clean(data[key]))) return 'Please complete every required field.'
   if (!/^\S+@\S+\.\S+$/.test(clean(data.email))) return 'Please enter a valid email address.'
-  if (clean(data.phone).replace(/\D/g, '').length < 7) return 'Please enter a valid phone number.'
   if (!['Math', 'Science', 'Essay Writing'].includes(clean(data.serviceArea))) return 'Please select Math, Science, or Essay Writing.'
   if (!['Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11'].includes(clean(data.grade))) return 'Please select a grade from 6 through 11.'
   if (clean(data.gender) && !['Female', 'Male'].includes(clean(data.gender))) return 'Please select Female or Male for gender.'
@@ -43,10 +37,9 @@ function isValidApplication(data) {
 function buildEmail(data) {
   const rows = [
     ['Tutoring area', clean(data.serviceArea)],
-    ['Student name', `${clean(data.studentFirstName)} ${clean(data.studentLastName)}`], ['Age', clean(data.age)], ['Gender', clean(data.gender) || 'Not provided'], ['Current grade', clean(data.grade)], ['School', clean(data.school)],
-    ['Current course or subject', clean(data.currentCourse)], ['Areas needing help', clean(data.helpAreas)], ['Academic goals', clean(data.academicGoals)], ['Additional student information', clean(data.additionalInfo, 5000) || 'Not provided'],
-    ['Parent / guardian', `${clean(data.parentFirstName)} ${clean(data.parentLastName)}`], ['Email', clean(data.email)], ['Phone', formatPhone(data.phone)], ['Preferred contact method', clean(data.contactMethod)], ['Additional contact information', clean(data.additionalContact, 3000) || 'Not provided'],
-    ['Preferred days', clean(data.days)], ['Preferred times', clean(data.times)], ['Timezone', clean(data.timezone)]
+    ['Student name', `${clean(data.studentFirstName)} ${clean(data.studentLastName)}`], ['Age', clean(data.age)], ['Gender', clean(data.gender)], ['Current grade', clean(data.grade)],
+    ['Current subject', clean(data.currentCourse)],
+    ['Parent / guardian', `${clean(data.parentFirstName)} ${clean(data.parentLastName)}`], ['Email', clean(data.email)]
   ]
   const text = rows.map(([label, value]) => `${label}: ${value}`).join('\n\n')
   const html = `<h1>New Tutoring Application</h1><table style="border-collapse:collapse;width:100%;max-width:720px">${rows.map(([label, value]) => `<tr><th style="text-align:left;vertical-align:top;padding:10px;border-bottom:1px solid #d9e2ec;width:34%;color:#243b53">${escapeHtml(label)}</th><td style="padding:10px;border-bottom:1px solid #d9e2ec;white-space:pre-wrap">${escapeHtml(value)}</td></tr>`).join('')}</table>`
@@ -55,10 +48,10 @@ function buildEmail(data) {
 function applicationPayload(data, submissionId) {
   return {
     submission_id: submissionId,
-    service_area: clean(data.serviceArea), student_first_name: clean(data.studentFirstName), student_last_name: clean(data.studentLastName), age: clean(data.age), gender: clean(data.gender), grade: clean(data.grade), school: clean(data.school), current_course: clean(data.currentCourse),
-    help_areas: clean(data.helpAreas, 5000), academic_goals: clean(data.academicGoals, 5000), additional_student_info: clean(data.additionalInfo, 5000),
-    parent_first_name: clean(data.parentFirstName), parent_last_name: clean(data.parentLastName), email: clean(data.email).toLowerCase(), phone: formatPhone(data.phone), contact_method: clean(data.contactMethod), additional_contact_info: clean(data.additionalContact, 3000),
-    days: clean(data.days), times: clean(data.times), timezone: clean(data.timezone)
+    service_area: clean(data.serviceArea), student_first_name: clean(data.studentFirstName), student_last_name: clean(data.studentLastName), age: clean(data.age), gender: clean(data.gender), grade: clean(data.grade), school: '', current_course: clean(data.currentCourse),
+    help_areas: 'Not provided', academic_goals: 'Not provided', additional_student_info: '',
+    parent_first_name: clean(data.parentFirstName), parent_last_name: clean(data.parentLastName), email: clean(data.email).toLowerCase(), phone: '', contact_method: '', additional_contact_info: '',
+    days: 'Not provided', times: 'Not provided', timezone: 'Not provided'
   }
 }
 async function saveApplication(data, submissionId) {
