@@ -35,9 +35,9 @@ export function PortalLogin() {
     const { data: role, error: roleError } = await supabase.from('user_roles').select('role').eq('user_id', data.user.id).maybeSingle()
     setBusy(false)
     if (roleError || !role) { await supabase.auth.signOut(); setError('Your account is not assigned to a portal yet. Please contact the school.'); return }
-    if (role.role === 'admin') { location.hash = '#/admin'; return }
+    if (['admin', 'parent', 'student', 'tutor'].includes(role.role)) { location.hash = `#/${role.role}`; return }
     await supabase.auth.signOut()
-    setError(`The ${role.role} portal is planned for after launch. This account cannot access the administrator portal.`)
+    setError('Your account is not assigned to a portal yet. Please contact the school.')
   }
 
   return <section className="portal-page"><div className="portal-intro"><p className="eyebrow">Secure portal</p><h1>Portal Login</h1><p>Administrative access for Nazar’s School of Mathematics. Parent, student, and tutor portals will be introduced as the service grows.</p></div><form className="login-form" onSubmit={submit}><h2>Sign in</h2>{!supabase && <SetupNotice />}{error && <div className="form-error" role="alert">{error}</div>}<label htmlFor="portal-email">Email address</label><input id="portal-email" type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} /><label htmlFor="portal-password">Password</label><input id="portal-password" type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} /><button className="button" disabled={busy}>{busy ? 'Signing in...' : 'Sign in'}</button></form></section>

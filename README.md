@@ -47,6 +47,16 @@ The portal also needs `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. T
 
 Do not expose `SUPABASE_SERVICE_ROLE_KEY` or use a `VITE_` prefix for it. `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` contain only browser-safe values.
 
+## Parent, student, and tutor portals
+
+Run `supabase/migrations/20260805_role_portals.sql` after the earlier migrations. It adds secure role policies for parent, student, and tutor portal access, plus the student Auth-user link required for student logins.
+
+Create or invite each person in Supabase Authentication, then link their Auth UUID to the appropriate `parents`, `students`, or `tutors` record and add the matching `user_roles` row. The comments at the bottom of the migration include the exact SQL patterns. Only create portal accounts for accepted families and active tutors.
+
+Parents can view their students, sessions, assignments, and progress. Students can view their own sessions, assignments, and progress. Tutors can view their assigned sessions and create assignments, progress updates, and session notes for students who already appear in their session list. Sessions and initial tutor/student assignments remain administrator-controlled while scheduling policies are being established.
+
+Payments, invoicing, and external calendar integrations are intentionally not included yet; they need their own provider accounts, pricing, refund, and scheduling policies before they should be enabled.
+
 ## Editing business content
 
 Update `src/content.ts` to change the business name, email, phone number, grade range, available subjects, and FAQ answers.
