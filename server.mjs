@@ -118,6 +118,8 @@ createServer(async (req, res) => {
             return sendJson(res, 202, { ok: true, emailSent: false, warning: message })
           }
           await recordNotificationStatus(stored.supabase, stored.applicationId, 'sent')
+          const parentReceipt = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ from, to: [clean(data.email)], subject: 'Application Received | Nazar’s School of Mathematics', html: `<p>Hello ${escapeHtml(clean(data.parentFirstName))},</p><p>Thank you for submitting an application for ${escapeHtml(clean(data.studentFirstName))}. It has been received and will be reviewed. We will contact you at this email address if the application is accepted.</p><p>Nazar’s School of Mathematics</p>`, text: `Hello ${clean(data.parentFirstName)},\n\nThank you for submitting an application for ${clean(data.studentFirstName)}. It has been received and will be reviewed. We will contact you at this email address if the application is accepted.\n\nNazar’s School of Mathematics` }) })
+          if (!parentReceipt.ok) console.error('Parent application receipt could not be sent:', parentReceipt.status)
           return sendJson(res, 201, { ok: true, emailSent: true })
         } catch (emailError) {
           console.error('Email delivery failed after application save:', emailError.message)
