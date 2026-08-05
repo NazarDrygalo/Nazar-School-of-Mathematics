@@ -38,6 +38,16 @@ export const site = {
     'Calculus',
     'Homework support and test preparation'
   ],
+  reviewPreview: [
+    ['Sample Parent A', 'Our child felt more comfortable asking questions and approaching new math topics step by step.'],
+    ['Sample Parent B', 'The lessons gave our student a clearer routine for working through homework and preparing for assessments.'],
+    ['Sample Parent C', 'We appreciated the thoughtful communication and the patient, one-to-one approach to tutoring.'],
+    ['Sample Parent D', 'Our child became more confident with the material and looked forward to the online sessions.'],
+    ['Sample Parent E', 'The support was focused, organized, and well matched to our student’s current classwork.'],
+    ['Sample Parent F', 'It was helpful to have instruction shaped around the areas where our child needed more time and practice.'],
+    ['Sample Parent G', 'The online format fit easily into our schedule while still giving our student individual attention.'],
+    ['Sample Parent H', 'We valued having a clear plan and a tutor who took the time to understand our student’s needs.']
+  ],
   faq: [
     ['What grades do you tutor?', 'Tutoring is available for students in middle school through 11th grade.'],
     ['How are lessons conducted?', 'Lessons are conducted online in a focused, one-to-one setting. Families receive the specific meeting details after a tutoring plan is established.'],
