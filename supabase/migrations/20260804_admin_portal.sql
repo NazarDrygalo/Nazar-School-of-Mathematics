@@ -52,7 +52,7 @@ drop policy if exists "admins read students" on public.students;
 create policy "admins read students" on public.students
 for select to authenticated using (public.is_admin());
 
-drop policy if exists "admins read applications" on public.applications;`
+drop policy if exists "admins read applications" on public.applications;
 create policy "admins read applications" on public.applications
 for select to authenticated using (public.is_admin());
 

@@ -65,7 +65,100 @@ async function recordNotificationStatus(supabase, applicationId, status, error =
   if (updateError) console.error('Could not update application notification status:', updateError.message)
 }
 
+function readJsonBody(req, maxBytes = 100_000) {
+  return new Promise((resolve, reject) => {
+    let raw = ''
+    req.on('data', (chunk) => {
+      raw += chunk
+      if (raw.length > maxBytes) reject(Object.assign(new Error('Request body is too large.'), { status: 413 }))
+    })
+    req.on('aborted', () => reject(Object.assign(new Error('The request was interrupted.'), { status: 400 })))
+    req.on('error', () => reject(Object.assign(new Error('The request could not be read.'), { status: 400 })))
+    req.on('end', () => {
+      try { resolve(JSON.parse(raw)) }
+      catch { reject(Object.assign(new Error('The request must contain valid JSON.'), { status: 400 })) }
+    })
+  })
+}
+
+async function requireAdmin(req) {
+  if (!isSupabaseConfigured()) throw Object.assign(new Error('The secure administrator API is not configured.'), { status: 503 })
+  const token = clean(req.headers.authorization, 10_000).match(/^Bearer\s+(.+)$/i)?.[1]
+  if (!token) throw Object.assign(new Error('Administrator sign-in is required.'), { status: 401 })
+  const supabase = createSupabaseAdminClient()
+  const { data: authData, error: authError } = await supabase.auth.getUser(token)
+  if (authError || !authData.user) throw Object.assign(new Error('Your session is invalid or has expired. Please sign in again.'), { status: 401 })
+  const { data: role, error: roleError } = await supabase.from('user_roles').select('role').eq('user_id', authData.user.id).maybeSingle()
+  if (roleError) throw Object.assign(new Error('The administrator role could not be verified.'), { status: 503 })
+  if (role?.role !== 'admin') throw Object.assign(new Error('Administrator access is required.'), { status: 403 })
+  return { supabase, user: authData.user }
+}
+
+function buildAcceptanceEmail(application) {
+  const parentName = clean(application.parents?.first_name) || 'Parent or guardian'
+  const studentName = [clean(application.students?.first_name), clean(application.students?.last_name)].filter(Boolean).join(' ') || 'your student'
+  const serviceArea = clean(application.service_area) || 'tutoring'
+  const text = `Hello ${parentName},\n\nWe are pleased to let you know that ${studentName}'s application for ${serviceArea} has been accepted.\n\nPlease reply to this email so we can discuss the student’s needs, confirm the tutor, and agree on a lesson schedule. Session length is decided with each family and is commonly one hour.\n\nNazar’s School of Mathematics\nnazarschoolofmath.com\n+1 408-460-3643`
+  const html = `<p>Hello ${escapeHtml(parentName)},</p><p>We are pleased to let you know that <strong>${escapeHtml(studentName)}'s application for ${escapeHtml(serviceArea)}</strong> has been accepted.</p><p>Please reply to this email so we can discuss the student’s needs, confirm the tutor, and agree on a lesson schedule. Session length is decided with each family and is commonly one hour.</p><p>Nazar’s School of Mathematics<br><a href="https://nazarschoolofmath.com">nazarschoolofmath.com</a><br><a href="tel:+14084603643">+1 408-460-3643</a></p>`
+  return { parentName, studentName, text, html }
+}
+
+async function changeApplicationStatus(req, res, applicationId) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(applicationId)) return sendJson(res, 400, { error: 'A valid application ID is required.' })
+  try {
+    const { supabase } = await requireAdmin(req)
+    const body = await readJsonBody(req)
+    const nextStatus = clean(body?.status, 40)
+    if (!['submitted', 'reviewing', 'accepted', 'declined', 'withdrawn'].includes(nextStatus)) return sendJson(res, 400, { error: 'Select a valid application status.' })
+
+    const { data: application, error: loadError } = await supabase.from('applications').select('id,status,service_area,accepted_email_status,accepted_email_sent_at,parents(first_name,last_name,email),students(first_name,last_name)').eq('id', applicationId).maybeSingle()
+    if (loadError) throw Object.assign(new Error('The application could not be loaded. Confirm the secure scheduling migration has been run.'), { status: 502 })
+    if (!application) return sendJson(res, 404, { error: 'Application not found.' })
+
+    const { error: updateError } = await supabase.from('applications').update({ status: nextStatus }).eq('id', applicationId)
+    if (updateError) throw Object.assign(new Error('The application status could not be updated.'), { status: 502 })
+    if (nextStatus !== 'accepted' || application.accepted_email_sent_at) return sendJson(res, 200, { ok: true, status: nextStatus, acceptanceEmail: application.accepted_email_sent_at ? 'already_sent' : 'not_applicable' })
+
+    const { data: claim, error: claimError } = await supabase.from('applications').update({ accepted_email_status: 'sending', accepted_email_error: null }).eq('id', applicationId).is('accepted_email_sent_at', null).in('accepted_email_status', ['not_sent', 'failed']).select('id').maybeSingle()
+    if (claimError) throw Object.assign(new Error('The application was accepted, but email delivery could not be prepared.'), { status: 502, statusUpdated: true })
+    if (!claim) return sendJson(res, 409, { error: 'The application was accepted and its acceptance email is already being processed.', statusUpdated: true })
+    if (!process.env.RESEND_API_KEY) {
+      await supabase.from('applications').update({ accepted_email_status: 'failed', accepted_email_error: 'Resend is not configured on the server.' }).eq('id', applicationId)
+      return sendJson(res, 503, { error: 'The application was accepted, but the acceptance email could not be sent because Resend is not configured.', statusUpdated: true })
+    }
+
+    const email = buildAcceptanceEmail(application)
+    let response
+    try {
+      response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: process.env.FROM_EMAIL || "Nazar's School of Mathematics <onboarding@resend.dev>", to: [clean(application.parents?.email).toLowerCase()], reply_to: recipient, subject: `Application Accepted | ${email.studentName}`, html: email.html, text: email.text })
+      })
+    } catch (error) {
+      await supabase.from('applications').update({ accepted_email_status: 'failed', accepted_email_error: 'The Resend request could not be completed.' }).eq('id', applicationId)
+      throw Object.assign(new Error('The application was accepted, but the acceptance email could not be delivered. You can retry by selecting accepted again.'), { status: 502, statusUpdated: true })
+    }
+    if (!response.ok) {
+      await supabase.from('applications').update({ accepted_email_status: 'failed', accepted_email_error: `Resend returned HTTP ${response.status}.` }).eq('id', applicationId)
+      throw Object.assign(new Error('The application was accepted, but the acceptance email provider rejected delivery. Check Resend and retry by selecting accepted again.'), { status: 502, statusUpdated: true })
+    }
+    const sentAt = new Date().toISOString()
+    const { error: trackingError } = await supabase.from('applications').update({ accepted_email_status: 'sent', accepted_email_sent_at: sentAt, accepted_email_error: null }).eq('id', applicationId)
+    if (trackingError) throw Object.assign(new Error('The acceptance email was delivered, but its delivery record could not be saved. Check Resend before retrying.'), { status: 502, statusUpdated: true })
+    return sendJson(res, 200, { ok: true, status: nextStatus, acceptanceEmail: 'sent', acceptedEmailSentAt: sentAt })
+  } catch (error) {
+    console.error('Administrator status update failed:', error.message)
+    return sendJson(res, error.status || 500, { error: error.message || 'The application status could not be changed.', statusUpdated: Boolean(error.statusUpdated) })
+  }
+}
+
 createServer(async (req, res) => {
+  const adminStatusMatch = req.url?.split('?')[0].match(/^\/api\/admin\/applications\/([0-9a-f-]+)\/status$/i)
+  if (adminStatusMatch) {
+    if (req.method !== 'PATCH') return sendJson(res, 405, { error: 'Method not allowed.' })
+    return changeApplicationStatus(req, res, adminStatusMatch[1])
+  }
   if (req.url === '/api/application' && req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' })
   if (req.method === 'POST' && req.url === '/api/application') {
     let raw = ''

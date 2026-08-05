@@ -47,13 +47,28 @@ The portal also needs `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. T
 
 Do not expose `SUPABASE_SERVICE_ROLE_KEY` or use a `VITE_` prefix for it. `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` contain only browser-safe values.
 
+Application status changes use the server-only `PATCH /api/admin/applications/:id/status` endpoint. The endpoint validates the caller's Supabase access token and admin role before using the service-role client. Selecting `accepted` sends the parent acceptance email through Resend and records its delivery state; selecting it again does not resend an email that was already recorded as sent.
+
 ## Parent, student, and tutor portals
 
-Run `supabase/migrations/20260805_role_portals.sql` after the earlier migrations. It adds secure role policies for parent, student, and tutor portal access, plus the student Auth-user link required for student logins.
+Run `supabase/migrations/20260805_role_portals.sql` after the earlier migrations, then run `supabase/migrations/20260805_secure_scheduling.sql`. The first adds role policies and the student Auth-user link. The second adds secure tutor/student assignments, acceptance-email delivery fields, and assignment-scoped tutor write policies.
 
 Create or invite each person in Supabase Authentication, then link their Auth UUID to the appropriate `parents`, `students`, or `tutors` record and add the matching `user_roles` row. The comments at the bottom of the migration include the exact SQL patterns. Only create portal accounts for accepted families and active tutors.
 
-Parents can view their students, sessions, assignments, and progress. Students can view their own sessions, assignments, and progress. Tutors can view their assigned sessions and create assignments, progress updates, and session notes for students who already appear in their session list. Sessions and initial tutor/student assignments remain administrator-controlled while scheduling policies are being established.
+Parents can view their students, sessions, assignments, and progress. Students can view their own sessions, assignments, and progress. Administrators can activate an accepted student and assign one active tutor from the application detail panel. Tutors can then schedule sessions and create assignments and progress updates only for actively assigned students. Session times are saved as UTC instants and displayed in each viewer's local time zone.
+
+The onboarding panel intentionally does not create Auth accounts. After accepting a family, invite only the parent and/or student who should receive portal access, then link the Auth UUID and role:
+
+```sql
+update public.parents set auth_user_id = 'PARENT_AUTH_UUID' where email = 'parent@example.com';
+update public.students set auth_user_id = 'STUDENT_AUTH_UUID' where id = 'STUDENT_RECORD_UUID';
+insert into public.user_roles (user_id, role) values ('PARENT_AUTH_UUID', 'parent')
+on conflict (user_id) do update set role = excluded.role;
+insert into public.user_roles (user_id, role) values ('STUDENT_AUTH_UUID', 'student')
+on conflict (user_id) do update set role = excluded.role;
+```
+
+For an active tutor, first create the `public.tutors` record if needed, invite the tutor in Supabase Authentication, link `tutors.auth_user_id`, and add a `tutor` row in `user_roles`. Do not create accounts for unaccepted applicants or inactive tutors.
 
 Payments, invoicing, and external calendar integrations are intentionally not included yet; they need their own provider accounts, pricing, refund, and scheduling policies before they should be enabled.
 
