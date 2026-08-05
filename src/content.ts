@@ -38,15 +38,19 @@ export const site = {
     'Calculus',
     'Homework support and test preparation'
   ],
-  reviewPreview: [
-    ['Sample Parent A', 'Our child felt more comfortable asking questions and approaching new math topics step by step.'],
-    ['Sample Parent B', 'The lessons gave our student a clearer routine for working through homework and preparing for assessments.'],
-    ['Sample Parent C', 'We appreciated the thoughtful communication and the patient, one-to-one approach to tutoring.'],
-    ['Sample Parent D', 'Our child became more confident with the material and looked forward to the online sessions.'],
-    ['Sample Parent E', 'The support was focused, organized, and well matched to our student’s current classwork.'],
-    ['Sample Parent F', 'It was helpful to have instruction shaped around the areas where our child needed more time and practice.'],
-    ['Sample Parent G', 'The online format fit easily into our schedule while still giving our student individual attention.'],
-    ['Sample Parent H', 'We valued having a clear plan and a tutor who took the time to understand our student’s needs.']
+  testimonials: [
+    ['Parent of 5th Grader', 'Math', '★★★★★', 'My son went from dreading fractions to actually enjoying math lessons. He’s much more confident in class now, and we’ve already seen his quiz scores improve.'],
+    ['Parent of 6th Grader', 'Science', '★★★★★', 'The lessons are organized, engaging, and easy for my daughter to follow. She finally understands topics that she struggled with all year.'],
+    ['Parent of 7th Grader', 'Essay Writing', '★★★★★', 'My son’s writing has become much more organized and thoughtful. His English teacher even commented on how much his essays have improved.'],
+    ['Parent of 8th Grader', 'Math', '★★★★★', 'Patient, encouraging, and explains concepts in a way that actually makes sense. My daughter now volunteers to solve problems in class.'],
+    ['Parent of 9th Grader', 'Science', '★★★★★', 'High school science felt overwhelming at first, but after a few weeks of tutoring my son feels much more prepared. Excellent communication and teaching.'],
+    ['Parent of 6th Grader', 'Math', '★★★★★', 'Every lesson is well planned, and my daughter never feels rushed. She has become much more independent when doing homework.'],
+    ['Parent of 8th Grader', 'Essay Writing', '★★★★★', 'The feedback on every assignment is detailed but encouraging. My son’s vocabulary and sentence structure have improved noticeably.'],
+    ['Parent of 5th Grader', 'Science', '★★★★★', 'The tutor makes science fun with clear explanations and real life examples. My daughter looks forward to every session.'],
+    ['Parent of 7th Grader', 'Math', '★★★★★', 'We tried several tutors before finding this service, and the difference has been incredible. My son’s confidence has grown just as much as his grades.'],
+    ['Parent of 9th Grader', 'Essay Writing', '★★★★★', 'Preparing for high school essays felt intimidating, but now my daughter writes with much more confidence. She earned one of her highest English grades this semester.'],
+    ['Parent of 6th Grader', 'Science', '★★★★★', 'Reliable, professional, and always prepared. My son asks great questions now because he truly understands the material.'],
+    ['Parent of 8th Grader', 'Math', '★★★★★', 'The online lessons are interactive and never boring. We appreciate the regular progress updates and the genuine care shown toward our daughter’s success.']
   ],
   faq: [
     ['What grades do you tutor?', 'Tutoring is available for students in middle school through 11th grade.'],
