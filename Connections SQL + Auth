@@ -1,0 +1,193 @@
+1. Find the accepted family records
+Replace the parent email:
+
+select
+  a.id as application_id,
+  a.status,
+  p.id as parent_record_id,
+  p.email as parent_email,
+  s.id as student_record_id,
+  s.first_name as student_first_name,
+  s.last_name as student_last_name,
+  s.active as student_active
+from public.applications a
+join public.parents p on p.id = a.parent_id
+join public.students s on s.id = a.student_id
+where lower(p.email) = lower('REAL_PARENT_EMAIL');
+
+Confirm:
+status is accepted
+student_active is true
+The student name is correct
+If not, accept and onboard the application from the administrator portal first.
+
+---------------------------------------------------------------------------------------------
+
+2. Create Authentication users
+Under Supabase → Authentication → Users, create or invite:
+The parent using their real email
+The student using a separate email, only if the student needs an independent login
+The tutor using their real email
+Never give the parent and student the same Authentication account.
+
+---------------------------------------------------------------------------------------------
+
+3. Link the real parent
+Change REAL_PARENT_EMAIL to the exact email used in both the application and Authentication:
+
+begin;
+
+update public.parents
+set auth_user_id = (
+  select id
+  from auth.users
+  where lower(email) = lower('REAL_PARENT_EMAIL')
+)
+where lower(email) = lower('REAL_PARENT_EMAIL');
+
+insert into public.user_roles (user_id, role)
+select id, 'parent'
+from auth.users
+where lower(email) = lower('REAL_PARENT_EMAIL')
+on conflict (user_id) do update
+set role = excluded.role;
+
+commit;
+
+
+Verify:
+
+
+select
+  p.id,
+  p.first_name,
+  p.last_name,
+  p.email,
+  p.auth_user_id,
+  ur.role
+from public.parents p
+left join public.user_roles ur on ur.user_id = p.auth_user_id
+where lower(p.email) = lower('REAL_PARENT_EMAIL');
+
+Expected role: parent.
+
+-------------------------------------------------------------------------------------
+
+4. Link the real student
+Copy student_record_id from step 1. Change both placeholders:
+
+begin;
+
+update public.students
+set auth_user_id = (
+  select id
+  from auth.users
+  where lower(email) = lower('REAL_STUDENT_LOGIN_EMAIL')
+)
+where id = 'STUDENT_RECORD_UUID';
+
+insert into public.user_roles (user_id, role)
+select id, 'student'
+from auth.users
+where lower(email) = lower('REAL_STUDENT_LOGIN_EMAIL')
+on conflict (user_id) do update
+set role = excluded.role;
+
+commit;
+
+Verify:
+
+select
+  s.id,
+  s.first_name,
+  s.last_name,
+  s.active,
+  au.email as login_email,
+  ur.role
+from public.students s
+left join auth.users au on au.id = s.auth_user_id
+left join public.user_roles ur on ur.user_id = s.auth_user_id
+where s.id = 'STUDENT_RECORD_UUID';
+
+Expected results:
+active is true
+login_email is the student’s email
+role is student
+
+---------------------------------------------------------------------------------
+
+5. Link the real tutor
+The tutor operational record should already exist and be active. Check it first:
+
+select
+  id as tutor_record_id,
+  first_name,
+  last_name,
+  email,
+  active,
+  auth_user_id
+from public.tutors
+where lower(email) = lower('REAL_TUTOR_EMAIL');
+
+
+Then link it:
+
+
+begin;
+
+update public.tutors
+set
+  auth_user_id = (
+    select id
+    from auth.users
+    where lower(email) = lower('REAL_TUTOR_EMAIL')
+  ),
+  active = true
+where lower(email) = lower('REAL_TUTOR_EMAIL');
+
+insert into public.user_roles (user_id, role)
+select id, 'tutor'
+from auth.users
+where lower(email) = lower('REAL_TUTOR_EMAIL')
+on conflict (user_id) do update
+set role = excluded.role;
+
+commit;
+
+
+Verify:
+
+
+select
+  t.id,
+  t.first_name,
+  t.last_name,
+  t.email,
+  t.active,
+  t.auth_user_id,
+  ur.role
+from public.tutors t
+left join public.user_roles ur on ur.user_id = t.auth_user_id
+where lower(t.email) = lower('REAL_TUTOR_EMAIL');
+
+
+
+Expected results:
+active is true
+auth_user_id is populated
+role is tutor
+
+---------------------------------------------------------------------------------------
+
+6. Verify the tutor/student assignment
+
+select
+  s.first_name || ' ' || s.last_name as student,
+  t.first_name || ' ' || t.last_name as tutor,
+  sta.active
+from public.student_tutor_assignments sta
+join public.students s on s.id = sta.student_id
+join public.tutors t on t.id = sta.tutor_id
+where s.id = 'STUDENT_RECORD_UUID';
+
+There should be one row with active = true. If there is no row, use the administrator portal to assign the tutor to the accepted student.
