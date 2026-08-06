@@ -19,7 +19,7 @@ const contentTypes = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascr
 
 function sendJson(res, status, body) {
   if (res.writableEnded) return
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'strict-origin-when-cross-origin' })
   res.end(JSON.stringify(body))
 }
 function clean(value, max = 2000) { return typeof value === 'string' ? value.trim().slice(0, max) : '' }
@@ -153,7 +153,7 @@ async function changeApplicationStatus(req, res, applicationId) {
   }
 }
 
-createServer(async (req, res) => {
+export async function requestHandler(req, res) {
   const adminStatusMatch = req.url?.split('?')[0].match(/^\/api\/admin\/applications\/([0-9a-f-]+)\/status$/i)
   if (adminStatusMatch) {
     if (req.method !== 'PATCH') return sendJson(res, 405, { error: 'Method not allowed.' })
@@ -232,7 +232,13 @@ createServer(async (req, res) => {
   const candidate = normalize(join(dist, requested))
   const safePath = !relative(dist, candidate).startsWith('..') && !isAbsolute(relative(dist, candidate)) ? candidate : join(dist, 'index.html')
   const file = existsSync(safePath) ? safePath : join(dist, 'index.html')
-  res.writeHead(200, { 'Content-Type': contentTypes[extname(file)] || 'application/octet-stream' })
+  res.writeHead(200, { 'Content-Type': contentTypes[extname(file)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'strict-origin-when-cross-origin' })
   if (req.method === 'HEAD') return res.end()
   createReadStream(file).pipe(res)
-}).listen(port, () => console.log(`Nazar's School of Mathematics is running at http://localhost:${port}`))
+}
+
+export function startServer(listenPort = port) {
+  return createServer(requestHandler).listen(listenPort, () => console.log(`Nazar's School of Mathematics is running at http://localhost:${listenPort}`))
+}
+
+if (process.argv[1]?.replaceAll('\\', '/').endsWith('/server.mjs')) startServer()

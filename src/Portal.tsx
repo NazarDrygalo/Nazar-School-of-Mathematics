@@ -19,6 +19,9 @@ type Application = {
 }
 type Tutor = { id: string; first_name: string; last_name: string; email: string; active: boolean; auth_user_id: string | null }
 type TutorAssignment = { student_id: string; tutor_id: string; active: boolean }
+type SessionItem = { id: string; starts_at: string; ends_at: string; status: string; meeting_url: string | null; students: { first_name: string; last_name: string } | null; tutors: { first_name: string; last_name: string } | null }
+type ChangeRequest = { id: string; request_type: string; requested_starts_at: string | null; reason: string | null; status: string; created_at: string; tutoring_sessions: { starts_at: string; students: { first_name: string; last_name: string } | null; tutors: { first_name: string; last_name: string } | null } | null }
+const portalDate = (value: string) => new Date(value).toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
 
 function SetupNotice() {
   return <p className="portal-note">Portal login needs the browser-safe Supabase variables and the portal migrations. See <code>README.md</code> for the setup steps.</p>
@@ -27,13 +30,35 @@ function SetupNotice() {
 export function PortalLogin() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
+  const [mode, setMode] = useState<'signin' | 'reset-request' | 'update-password'>(() => location.hash.includes('type=recovery') ? 'update-password' : 'signin')
+
+  useEffect(() => {
+    if (!supabase) return
+    const { data } = supabase.auth.onAuthStateChange(event => { if (event === 'PASSWORD_RECOVERY') setMode('update-password') })
+    return () => data.subscription.unsubscribe()
+  }, [])
 
   async function submit(event: FormEvent) {
     event.preventDefault()
     if (!supabase) { setError('Portal login is not configured yet. Add the browser-safe Supabase URL and publishable key.'); return }
-    setBusy(true); setError('')
+    setBusy(true); setError(''); setMessage('')
+    if (mode === 'reset-request') {
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${location.origin}/` })
+      setBusy(false)
+      if (resetError) { setError('We could not send a password-reset email. Confirm the address and try again.'); return }
+      setMessage('If this email belongs to a portal account, a password-reset link has been sent.'); return
+    }
+    if (mode === 'update-password') {
+      if (password.length < 10 || password !== confirmPassword) { setBusy(false); setError('Use at least 10 characters and make sure both password entries match.'); return }
+      const { error: updateError } = await supabase.auth.updateUser({ password })
+      setBusy(false)
+      if (updateError) { setError('The password could not be updated. Request a new reset link and try again.'); return }
+      await supabase.auth.signOut(); setPassword(''); setConfirmPassword(''); setMode('signin'); setMessage('Password updated. Sign in with your new password.'); location.hash = '#/portal'; return
+    }
     const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password })
     if (signInError || !data.user) { setBusy(false); setError('We could not sign you in. Please check your email address and password.'); return }
     const { data: role, error: roleError } = await supabase.from('user_roles').select('role').eq('user_id', data.user.id).maybeSingle()
@@ -44,17 +69,21 @@ export function PortalLogin() {
     setError('Your account is not assigned to a portal yet. Please contact the school.')
   }
 
-  return <section className="portal-page"><div className="portal-intro"><p className="eyebrow">Secure portal</p><h1>Portal Login</h1><p>Private access for administrators, parents, students, and tutors of Nazar’s School of Mathematics.</p></div><form className="login-form" onSubmit={submit}><h2>Sign in</h2>{!supabase && <SetupNotice />}{error && <div className="form-error" role="alert">{error}</div>}<label htmlFor="portal-email">Email address</label><input id="portal-email" type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} /><label htmlFor="portal-password">Password</label><input id="portal-password" type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} /><button className="button" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button></form></section>
+  const title = mode === 'signin' ? 'Sign in' : mode === 'reset-request' ? 'Reset your password' : 'Choose a new password'
+  return <section className="portal-page"><div className="portal-intro"><p className="eyebrow">Secure portal</p><h1>Portal Login</h1><p>Private access for administrators, parents, students, and tutors of Nazar’s School of Mathematics.</p></div><form className="login-form" onSubmit={submit}><h2>{title}</h2>{!supabase && <SetupNotice />}{error && <div className="form-error" role="alert">{error}</div>}{message && <p className="dashboard-message" role="status">{message}</p>}{mode !== 'update-password' && <><label htmlFor="portal-email">Email address</label><input id="portal-email" type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} /></>}{mode !== 'reset-request' && <><label htmlFor="portal-password">{mode === 'signin' ? 'Password' : 'New password'}</label><input id="portal-password" type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} minLength={mode === 'signin' ? undefined : 10} required value={password} onChange={e => setPassword(e.target.value)} /></>}{mode === 'update-password' && <><label htmlFor="portal-password-confirm">Confirm new password</label><input id="portal-password-confirm" type="password" autoComplete="new-password" minLength={10} required value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} /></>}<button className="button" disabled={busy}>{busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : mode === 'reset-request' ? 'Send reset link' : 'Update password'}</button>{mode === 'signin' ? <button type="button" className="text-button" onClick={() => { setMode('reset-request'); setError(''); setMessage('') }}>Forgot your password?</button> : mode === 'reset-request' && <button type="button" className="text-button" onClick={() => { setMode('signin'); setError(''); setMessage('') }}>Return to sign in</button>}</form></section>
 }
 
 export function AdminDashboard() {
   const [applications, setApplications] = useState<Application[]>([])
   const [tutors, setTutors] = useState<Tutor[]>([])
   const [assignments, setAssignments] = useState<TutorAssignment[]>([])
+  const [sessions, setSessions] = useState<SessionItem[]>([])
+  const [changeRequests, setChangeRequests] = useState<ChangeRequest[]>([])
   const [status, setStatus] = useState<'loading' | 'ready' | 'unauthorized' | 'error'>('loading')
   const [message, setMessage] = useState('')
   const [selected, setSelected] = useState<Application | null>(null)
   const [busy, setBusy] = useState(false)
+  const [newTutor, setNewTutor] = useState({ first_name: '', last_name: '', email: '' })
 
   async function load(selectedId?: string) {
     if (!supabase) { setStatus('error'); setMessage('The administrator portal is not configured yet.'); return }
@@ -62,17 +91,21 @@ export function AdminDashboard() {
     if (!session.session) { setStatus('unauthorized'); return }
     const { data: role } = await supabase.from('user_roles').select('role').eq('user_id', session.session.user.id).maybeSingle()
     if (role?.role !== 'admin') { await supabase.auth.signOut(); setStatus('unauthorized'); return }
-    const [applicationResult, tutorResult, assignmentResult] = await Promise.all([
+    const [applicationResult, tutorResult, assignmentResult, sessionResult, requestResult] = await Promise.all([
       supabase.from('applications').select('id, created_at, status, notification_status, accepted_email_status, accepted_email_sent_at, service_area, help_areas, academic_goals, preferred_days, preferred_times, timezone, parents(id,auth_user_id,first_name,last_name,email,phone), students(id,auth_user_id,active,first_name,last_name,grade,school,current_course)').order('created_at', { ascending: false }),
       supabase.from('tutors').select('id,first_name,last_name,email,active,auth_user_id').order('first_name'),
-      supabase.from('student_tutor_assignments').select('student_id,tutor_id,active')
+      supabase.from('student_tutor_assignments').select('student_id,tutor_id,active'),
+      supabase.from('tutoring_sessions').select('id,starts_at,ends_at,status,meeting_url,students(first_name,last_name),tutors(first_name,last_name)').order('starts_at'),
+      supabase.from('session_change_requests').select('id,request_type,requested_starts_at,reason,status,created_at,tutoring_sessions(starts_at,students(first_name,last_name),tutors(first_name,last_name))').order('created_at', { ascending: false })
     ])
-    const failed = [applicationResult, tutorResult, assignmentResult].find(result => result.error)
+    const failed = [applicationResult, tutorResult, assignmentResult, sessionResult, requestResult].find(result => result.error)
     if (failed?.error) { setStatus('error'); setMessage('Portal data could not be loaded. Confirm every migration in README.md has been run in order.'); return }
     const nextApplications = (applicationResult.data || []) as unknown as Application[]
     setApplications(nextApplications)
     setTutors((tutorResult.data || []) as Tutor[])
     setAssignments((assignmentResult.data || []) as TutorAssignment[])
+    setSessions((sessionResult.data || []) as unknown as SessionItem[])
+    setChangeRequests((requestResult.data || []) as unknown as ChangeRequest[])
     if (selectedId) setSelected(nextApplications.find(item => item.id === selectedId) || null)
     setStatus('ready')
   }
@@ -104,11 +137,39 @@ export function AdminDashboard() {
     setMessage('Student activated and tutor assignment saved. Portal Auth accounts were not created.')
   }
 
+  async function resolveChangeRequest(requestId: string, resolution: 'approved' | 'declined') {
+    if (!supabase || busy) return
+    setBusy(true); setMessage('')
+    const { error } = await supabase.rpc('resolve_session_change_request', { change_request_id: requestId, resolution })
+    setBusy(false)
+    if (error) { setMessage('The session request could not be resolved. Confirm the session-change migration has been run.'); return }
+    await load(selected?.id)
+    setMessage(`Session change request ${resolution}.`)
+  }
+
+  async function createTutor(event: FormEvent) {
+    event.preventDefault(); if (!supabase || busy) return
+    setBusy(true); setMessage('')
+    const { error } = await supabase.from('tutors').insert({ first_name: newTutor.first_name.trim(), last_name: newTutor.last_name.trim(), email: newTutor.email.trim().toLowerCase(), active: true })
+    setBusy(false)
+    if (error) { setMessage('The tutor record could not be created. Confirm the email is unique and the tutor-management migration has been run.'); return }
+    setNewTutor({ first_name: '', last_name: '', email: '' }); await load(selected?.id); setMessage('Active tutor record created. No Auth invitation was sent.')
+  }
+
+  async function setTutorActive(tutor: Tutor, active: boolean) {
+    if (!supabase || busy) return
+    setBusy(true); setMessage('')
+    const { error } = await supabase.from('tutors').update({ active }).eq('id', tutor.id)
+    setBusy(false)
+    if (error) { setMessage('The tutor status could not be updated.'); return }
+    await load(selected?.id); setMessage(`Tutor marked ${active ? 'active' : 'inactive'}.`)
+  }
+
   async function signOut() { await supabase?.auth.signOut(); location.hash = '#/portal' }
   if (status === 'loading') return <section className="portal-page"><p>Loading secure portal…</p></section>
   if (status === 'unauthorized') return <section className="portal-page"><div className="portal-intro"><p className="eyebrow">Secure portal</p><h1>Sign in required</h1><p>Please sign in with an administrator account to review applications.</p><a className="button" href="#/portal">Portal Login</a></div></section>
   if (status === 'error') return <section className="portal-page"><div className="portal-intro"><p className="eyebrow">Secure portal</p><h1>Portal unavailable</h1><p>{message}</p><a className="button" href="#/">Return home</a></div></section>
-  return <section className="dashboard"><header className="dashboard-header"><div><p className="eyebrow">Administrator portal</p><h1>Applications</h1><p>Review applications, send acceptance notices, and prepare accepted students for tutoring.</p></div><button className="text-button" onClick={signOut}>Sign out</button></header>{message && <p className="dashboard-message" role="status">{message}</p>}<div className="application-layout"><div className="application-list">{applications.length === 0 ? <p className="empty-state">No applications have been received yet.</p> : applications.map(application => <button key={application.id} className={`application-row ${selected?.id === application.id ? 'selected' : ''}`} onClick={() => setSelected(application)}><span><b>{application.students?.first_name} {application.students?.last_name}</b><small>{application.service_area} · {application.students?.grade} · {application.students?.current_course}</small></span><span className={`status status-${application.status}`}>{application.status}</span><small>{new Date(application.created_at).toLocaleDateString()}</small></button>)}</div><ApplicationDetail key={selected?.id || 'empty'} application={selected} tutors={tutors.filter(tutor => tutor.active)} assignments={assignments} busy={busy} onStatus={setApplicationStatus} onOnboard={activateAndAssign} /></div></section>
+  return <section className="dashboard"><header className="dashboard-header"><div><p className="eyebrow">Administrator portal</p><h1>Applications</h1><p>Review applications, send acceptance notices, and prepare accepted students for tutoring.</p></div><button className="text-button" onClick={signOut}>Sign out</button></header>{message && <p className="dashboard-message" role="status">{message}</p>}<div className="application-layout"><div className="application-list">{applications.length === 0 ? <p className="empty-state">No applications have been received yet.</p> : applications.map(application => <button key={application.id} className={`application-row ${selected?.id === application.id ? 'selected' : ''}`} onClick={() => setSelected(application)}><span><b>{application.students?.first_name} {application.students?.last_name}</b><small>{application.service_area} · {application.students?.grade} · {application.students?.current_course}</small></span><span className={`status status-${application.status}`}>{application.status}</span><small>{new Date(application.created_at).toLocaleDateString()}</small></button>)}</div><ApplicationDetail key={selected?.id || 'empty'} application={selected} tutors={tutors.filter(tutor => tutor.active)} assignments={assignments} busy={busy} onStatus={setApplicationStatus} onOnboard={activateAndAssign} /></div><SessionAdministration sessions={sessions} requests={changeRequests} busy={busy} onResolve={resolveChangeRequest} /><TutorAdministration tutors={tutors} newTutor={newTutor} setNewTutor={setNewTutor} busy={busy} onCreate={createTutor} onSetActive={setTutorActive} /></section>
 }
 
 function ApplicationDetail({ application, tutors, assignments, busy, onStatus, onOnboard }: { application: Application | null; tutors: Tutor[]; assignments: TutorAssignment[]; busy: boolean; onStatus: (application: Application, nextStatus: string) => Promise<void>; onOnboard: (application: Application, tutorId: string) => Promise<void> }) {
@@ -120,3 +181,11 @@ function ApplicationDetail({ application, tutors, assignments, busy, onStatus, o
   return <aside className="application-detail"><div className="detail-top"><div><p className="eyebrow">Application detail</p><h2>{student?.first_name} {student?.last_name}</h2></div><label>Application status<select disabled={busy} value={application.status} onChange={event => void onStatus(application, event.target.value)}>{['submitted','reviewing','accepted','declined','withdrawn'].map(value => <option key={value} value={value}>{value}</option>)}</select></label></div><div className="detail-grid"><Detail label="Tutoring area">{application.service_area}</Detail><Detail label="Student">{student?.grade}<br />{student?.school}<br />{student?.current_course}</Detail><Detail label="Parent / guardian">{parent?.first_name} {parent?.last_name}<br /><a href={`mailto:${parent?.email}`}>{parent?.email}</a><br />{parent?.phone || 'No phone provided'}</Detail><Detail label="Areas needing help">{application.help_areas}</Detail><Detail label="Academic goals">{application.academic_goals}</Detail><Detail label="Availability">{application.preferred_days}<br />{application.preferred_times}<br />{application.timezone}</Detail><Detail label="Application receipt">{application.notification_status}</Detail><Detail label="Acceptance email">{application.accepted_email_sent_at ? `Sent ${new Date(application.accepted_email_sent_at).toLocaleString()}` : application.accepted_email_status.replace('_', ' ')}</Detail></div>{application.status === 'accepted' && <section className="onboarding-panel"><h3>Accepted-family onboarding</h3><p>Activating a student and assigning a tutor makes the student available in that tutor’s scheduling tools. It does not create an Auth account.</p><p className="onboarding-state"><b>Student:</b> {student?.active ? 'Active' : 'Not active'} · <b>Tutor:</b> {currentTutor ? `${currentTutor.first_name} ${currentTutor.last_name}` : 'Not assigned'}</p><label htmlFor="onboarding-tutor">Assigned tutor</label><select id="onboarding-tutor" value={tutorId || currentAssignment?.tutor_id || ''} onChange={event => setTutorId(event.target.value)}><option value="">Select an active tutor</option>{tutors.map(tutor => <option key={tutor.id} value={tutor.id}>{tutor.first_name} {tutor.last_name}</option>)}</select><button className="button" disabled={busy || !(tutorId || currentAssignment?.tutor_id)} onClick={() => void onOnboard(application, tutorId || currentAssignment?.tutor_id || '')}>{busy ? 'Saving…' : 'Activate and assign tutor'}</button><div className="manual-steps"><b>Portal account checklist</b><ol><li>Invite only the accepted parent and/or student from Supabase Authentication.</li><li>Link the Auth UUID to the parent or student record.</li><li>Add the matching <code>user_roles</code> row using the SQL pattern in README.md.</li></ol><small>Parent Auth: {parent?.auth_user_id ? 'linked' : 'not linked'} · Student Auth: {student?.auth_user_id ? 'linked' : 'not linked'}</small></div></section>}</aside>
 }
 function Detail({ label, children }: { label: string; children: ReactNode }) { return <div><b>{label}</b><p>{children}</p></div> }
+
+function SessionAdministration({ sessions, requests, busy, onResolve }: { sessions: SessionItem[]; requests: ChangeRequest[]; busy: boolean; onResolve: (id: string, resolution: 'approved' | 'declined') => Promise<void> }) {
+  return <section className="admin-sessions"><div className="section-title"><p className="eyebrow">Scheduling</p><h2>Sessions and family requests</h2></div><div className="session-tools"><section className="portal-panel"><h3>All sessions</h3><div className="portal-list">{sessions.length ? sessions.map(session => <article key={session.id}><b>{portalDate(session.starts_at)}</b><span>{session.students?.first_name} {session.students?.last_name} · {session.tutors?.first_name} {session.tutors?.last_name}</span><small>{session.status}</small></article>) : <p className="empty-state">No sessions have been scheduled.</p>}</div></section><section className="portal-panel"><h3>Change requests</h3><div className="portal-list">{requests.length ? requests.map(request => <article key={request.id}><b>{request.request_type === 'cancel' ? 'Cancellation' : 'New-time request'} · {request.status}</b><span>{request.tutoring_sessions?.students?.first_name} {request.tutoring_sessions?.students?.last_name} · {portalDate(request.tutoring_sessions?.starts_at || request.created_at)}</span>{request.requested_starts_at && <small>Requested: {portalDate(request.requested_starts_at)}</small>}{request.reason && <small>{request.reason}</small>}{request.status === 'pending' && <span className="request-actions"><button disabled={busy} onClick={() => void onResolve(request.id, 'approved')}>Approve</button><button disabled={busy} onClick={() => void onResolve(request.id, 'declined')}>Decline</button></span>}</article>) : <p className="empty-state">No session changes have been requested.</p>}</div></section></div></section>
+}
+
+function TutorAdministration({ tutors, newTutor, setNewTutor, busy, onCreate, onSetActive }: { tutors: Tutor[]; newTutor: { first_name: string; last_name: string; email: string }; setNewTutor: (value: { first_name: string; last_name: string; email: string }) => void; busy: boolean; onCreate: (event: FormEvent) => Promise<void>; onSetActive: (tutor: Tutor, active: boolean) => Promise<void> }) {
+  return <section className="admin-sessions"><div className="section-title"><p className="eyebrow">Tutor administration</p><h2>Operational tutor records</h2><p>Create records only for active tutors. Supabase Auth invitations and UUID linking remain separate, deliberate steps.</p></div><div className="session-tools"><form className="portal-panel tool-form" onSubmit={event => void onCreate(event)}><h3>Add an active tutor</h3><label>First name<input required value={newTutor.first_name} onChange={event => setNewTutor({ ...newTutor, first_name: event.target.value })} /></label><label>Last name<input required value={newTutor.last_name} onChange={event => setNewTutor({ ...newTutor, last_name: event.target.value })} /></label><label>Email address<input required type="email" value={newTutor.email} onChange={event => setNewTutor({ ...newTutor, email: event.target.value })} /></label><button className="button" disabled={busy}>{busy ? 'Saving…' : 'Create tutor record'}</button></form><section className="portal-panel"><h3>Existing tutors</h3><div className="portal-list">{tutors.length ? tutors.map(tutor => <article key={tutor.id}><b>{tutor.first_name} {tutor.last_name}</b><span>{tutor.email}</span><small>{tutor.active ? 'Active' : 'Inactive'} · Auth {tutor.auth_user_id ? 'linked' : 'not linked'}</small><span className="request-actions"><button disabled={busy || tutor.active} onClick={() => void onSetActive(tutor, true)}>Activate</button><button disabled={busy || !tutor.active} onClick={() => void onSetActive(tutor, false)}>Deactivate</button></span></article>) : <p className="empty-state">No tutors have been created.</p>}</div></section></div></section>
+}

@@ -12,6 +12,8 @@ Professional landing site and parent application form for online tutoring for st
 
 `npm run dev` builds the app and starts the complete local server, including `/api/application`. Use this when testing the form. `npm run dev:client` starts Vite only for visual work; it deliberately does not provide the application API.
 
+Run `npm test` for local server-validation and migration-security checks. After applying migrations to a non-production Supabase project, follow `supabase/RLS_VERIFICATION.md` to exercise the policies with test users.
+
 ## Application email delivery
 
 The server sends applications through [Resend](https://resend.com). It does not simulate delivery.
@@ -52,6 +54,24 @@ Application status changes use the server-only `PATCH /api/admin/applications/:i
 ## Parent, student, and tutor portals
 
 Run `supabase/migrations/20260805_role_portals.sql` after the earlier migrations, then run `supabase/migrations/20260805_secure_scheduling.sql`. The first adds role policies and the student Auth-user link. The second adds secure tutor/student assignments, acceptance-email delivery fields, and assignment-scoped tutor write policies.
+
+Run `supabase/migrations/20260806_session_changes.sql` next. It adds parent cancellation/rescheduling requests, enforces the three-day request window with RLS, and provides an atomic administrator approval function.
+
+Run `supabase/migrations/20260806_tutor_management.sql` after that. It lets administrators create and activate/deactivate tutor operational records. It does not create Auth users or send invitations.
+
+Run `supabase/migrations/20260806_data_retention.sql` last. It adds a service-role-only cleanup function that deletes applications and historical portal activity after seven days while preserving active profiles, active tutor assignments, and future sessions.
+
+To enforce the policy automatically, enable Supabase Cron in the dashboard and schedule the cleanup once per day from the SQL Editor:
+
+```sql
+select cron.schedule(
+  'daily-tutoring-data-retention',
+  '17 3 * * *',
+  $$select public.purge_expired_tutoring_data();$$
+);
+```
+
+The example runs daily at 03:17 UTC. Confirm the job under Supabase Dashboard → Integrations → Cron. To test manually, run `select public.purge_expired_tutoring_data();` from the SQL Editor and review the returned deletion counts. Do not shorten the interval below one day.
 
 Create or invite each person in Supabase Authentication, then link their Auth UUID to the appropriate `parents`, `students`, or `tutors` record and add the matching `user_roles` row. The comments at the bottom of the migration include the exact SQL patterns. Only create portal accounts for accepted families and active tutors.
 
