@@ -2,6 +2,8 @@
 
 Professional landing site and parent application form for online tutoring for students in middle school through 11th grade.
 
+For a plain-language explanation of the complete application, onboarding, portal, tutoring, retention, testing, and deployment process, see [WORKFLOW_GUIDE.md](WORKFLOW_GUIDE.md).
+
 ## Run locally
 
 1. Install Node.js 20 or newer.
@@ -13,6 +15,12 @@ Professional landing site and parent application form for online tutoring for st
 `npm run dev` builds the app and starts the complete local server, including `/api/application`. Use this when testing the form. `npm run dev:client` starts Vite only for visual work; it deliberately does not provide the application API.
 
 Run `npm test` for local server-validation and migration-security checks. After applying migrations to a non-production Supabase project, follow `supabase/RLS_VERIFICATION.md` to exercise the policies with test users.
+
+## Search visibility and clean URLs
+
+Public pages use crawlable paths such as `/math`, `/science-and-essay-writing`, `/resources`, `/apply`, and `/contact`. Older `#/...` bookmarks are normalized to their clean equivalents. The Node server returns route-specific titles, descriptions, canonical URLs, Open Graph tags, and indexing directives in the initial HTML; private portal routes are marked `noindex, nofollow`.
+
+Vite copies `public/robots.txt` and `public/sitemap.xml` into the production build. After deployment, add `https://nazarschoolofmath.com` to Google Search Console, submit `https://nazarschoolofmath.com/sitemap.xml`, and use URL Inspection on the home page and each principal public route.
 
 ## Application email delivery
 
@@ -43,7 +51,7 @@ Before testing submissions, run `supabase/migrations/20260731_initial_tutoring_p
 
 ## Administrator portal
 
-Run `supabase/migrations/20260804_admin_portal.sql` after the initial migration. In Supabase Authentication, create Nazar's email/password user, then use the commented SQL at the bottom of that migration to assign that user the `admin` role. The public Portal Login can then securely route Nazar to `#/admin`, where applications can be reviewed and their status changed.
+Run `supabase/migrations/20260804_admin_portal.sql` after the initial migration. In Supabase Authentication, create Nazar's email/password user, then use the commented SQL at the bottom of that migration to assign that user the `admin` role. The public Portal Login can then securely route Nazar to `/admin`, where applications can be reviewed and their status changed.
 
 The portal also needs `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. These are browser-safe values from Supabase’s Connect panel. Do not substitute the server key for the publishable key.
 

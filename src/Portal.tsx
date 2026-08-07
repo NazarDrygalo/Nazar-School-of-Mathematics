@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { supabase } from './lib/supabase'
+import { navigateTo, type Page } from './routes'
 
 type Application = {
   id: string
@@ -57,14 +58,14 @@ export function PortalLogin() {
       const { error: updateError } = await supabase.auth.updateUser({ password })
       setBusy(false)
       if (updateError) { setError('The password could not be updated. Request a new reset link and try again.'); return }
-      await supabase.auth.signOut(); setPassword(''); setConfirmPassword(''); setMode('signin'); setMessage('Password updated. Sign in with your new password.'); location.hash = '#/portal'; return
+      await supabase.auth.signOut(); setPassword(''); setConfirmPassword(''); setMode('signin'); setMessage('Password updated. Sign in with your new password.'); navigateTo('portal'); return
     }
     const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password })
     if (signInError || !data.user) { setBusy(false); setError('We could not sign you in. Please check your email address and password.'); return }
     const { data: role, error: roleError } = await supabase.from('user_roles').select('role').eq('user_id', data.user.id).maybeSingle()
     setBusy(false)
     if (roleError || !role) { await supabase.auth.signOut(); setError('Your account is not assigned to a portal yet. Please contact the school.'); return }
-    if (['admin', 'parent', 'student', 'tutor'].includes(role.role)) { location.hash = `#/${role.role}`; return }
+    if (['admin', 'parent', 'student', 'tutor'].includes(role.role)) { navigateTo(role.role as Page); return }
     await supabase.auth.signOut()
     setError('Your account is not assigned to a portal yet. Please contact the school.')
   }
@@ -165,10 +166,10 @@ export function AdminDashboard() {
     await load(selected?.id); setMessage(`Tutor marked ${active ? 'active' : 'inactive'}.`)
   }
 
-  async function signOut() { await supabase?.auth.signOut(); location.hash = '#/portal' }
+  async function signOut() { await supabase?.auth.signOut(); navigateTo('portal') }
   if (status === 'loading') return <section className="portal-page"><p>Loading secure portal…</p></section>
-  if (status === 'unauthorized') return <section className="portal-page"><div className="portal-intro"><p className="eyebrow">Secure portal</p><h1>Sign in required</h1><p>Please sign in with an administrator account to review applications.</p><a className="button" href="#/portal">Portal Login</a></div></section>
-  if (status === 'error') return <section className="portal-page"><div className="portal-intro"><p className="eyebrow">Secure portal</p><h1>Portal unavailable</h1><p>{message}</p><a className="button" href="#/">Return home</a></div></section>
+  if (status === 'unauthorized') return <section className="portal-page"><div className="portal-intro"><p className="eyebrow">Secure portal</p><h1>Sign in required</h1><p>Please sign in with an administrator account to review applications.</p><a className="button" href="/portal">Portal Login</a></div></section>
+  if (status === 'error') return <section className="portal-page"><div className="portal-intro"><p className="eyebrow">Secure portal</p><h1>Portal unavailable</h1><p>{message}</p><a className="button" href="/">Return home</a></div></section>
   return <section className="dashboard"><header className="dashboard-header"><div><p className="eyebrow">Administrator portal</p><h1>Applications</h1><p>Review applications, send acceptance notices, and prepare accepted students for tutoring.</p></div><button className="text-button" onClick={signOut}>Sign out</button></header>{message && <p className="dashboard-message" role="status">{message}</p>}<div className="application-layout"><div className="application-list">{applications.length === 0 ? <p className="empty-state">No applications have been received yet.</p> : applications.map(application => <button key={application.id} className={`application-row ${selected?.id === application.id ? 'selected' : ''}`} onClick={() => setSelected(application)}><span><b>{application.students?.first_name} {application.students?.last_name}</b><small>{application.service_area} · {application.students?.grade} · {application.students?.current_course}</small></span><span className={`status status-${application.status}`}>{application.status}</span><small>{new Date(application.created_at).toLocaleDateString()}</small></button>)}</div><ApplicationDetail key={selected?.id || 'empty'} application={selected} tutors={tutors.filter(tutor => tutor.active)} assignments={assignments} busy={busy} onStatus={setApplicationStatus} onOnboard={activateAndAssign} /></div><SessionAdministration sessions={sessions} requests={changeRequests} busy={busy} onResolve={resolveChangeRequest} /><TutorAdministration tutors={tutors} newTutor={newTutor} setNewTutor={setNewTutor} busy={busy} onCreate={createTutor} onSetActive={setTutorActive} /></section>
 }
 

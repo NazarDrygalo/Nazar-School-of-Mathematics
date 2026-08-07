@@ -6,7 +6,7 @@ process.env.RESEND_API_KEY = 'placeholder'
 process.env.SUPABASE_URL = 'https://placeholder.example.com'
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'placeholder'
 
-const { requestHandler } = await import('../server.mjs')
+const { renderIndexHtml, requestHandler } = await import('../server.mjs')
 
 function request({ method = 'GET', url = '/', headers = {}, body = '' }) {
   return new Promise((resolve, reject) => {
@@ -49,4 +49,14 @@ test('administrator endpoint refuses to operate when secure server configuration
   const response = await request({ method: 'PATCH', url: '/api/admin/applications/00000000-0000-4000-8000-000000000000/status', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: 'accepted' }) })
   assert.equal(response.status, 503)
   assert.match(response.body.error, /not configured/i)
+})
+
+test('clean routes receive route-specific canonical and indexing metadata', () => {
+  const source = '<title>Home</title><meta name="description" content="Home" /><meta name="robots" content="index, follow" /><link rel="canonical" href="https://nazarschoolofmath.com/" /><meta property="og:title" content="Home" /><meta property="og:description" content="Home" /><meta property="og:url" content="https://nazarschoolofmath.com/" /><meta name="twitter:title" content="Home" /><meta name="twitter:description" content="Home" />'
+  const publicPage = renderIndexHtml(source, '/resources')
+  const privatePage = renderIndexHtml(source, '/parent')
+  assert.match(publicPage, /Student and Parent Resources/)
+  assert.match(publicPage, /canonical" href="https:\/\/nazarschoolofmath\.com\/resources"/)
+  assert.match(publicPage, /robots" content="index, follow"/)
+  assert.match(privatePage, /robots" content="noindex, nofollow"/)
 })

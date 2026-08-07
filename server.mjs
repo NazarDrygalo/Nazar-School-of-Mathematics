@@ -16,6 +16,40 @@ const dist = join(process.cwd(), 'dist')
 const recentRequests = new Map()
 const recipient = process.env.APPLICATION_RECIPIENT || 'nazar.drygalo@gmail.com'
 const contentTypes = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' }
+const routeSeo = {
+  '/': { title: 'Nazar’s School of Mathematics | Online Tutoring for Middle School–11th Grade', description: 'Personalized online mathematics tutoring for students in middle school through 11th grade.' },
+  '/math': { title: 'Tutoring Information | Nazar’s School of Mathematics', description: 'Learn how online, one-to-one mathematics tutoring works for middle school through 11th grade.' },
+  '/science-and-essay-writing': { title: 'Science and Essay Writing | Nazar’s School of Mathematics', description: 'Online science tutoring for middle school through 11th grade and individualized essay-writing support with Ariana.' },
+  '/resources': { title: 'Student and Parent Resources | Nazar’s School of Mathematics', description: 'Free, reputable math, science, essay-writing, and parent-support resources.' },
+  '/apply': { title: 'Apply for Tutoring | Nazar’s School of Mathematics', description: 'Submit an application for math, science, or essay-writing tutoring.' },
+  '/contact': { title: 'Contact | Nazar’s School of Mathematics', description: 'Contact Nazar’s School of Mathematics with questions about online tutoring.' },
+  '/privacy': { title: 'Privacy Notice | Nazar’s School of Mathematics', description: 'Privacy notice for Nazar’s School of Mathematics.' },
+  '/terms': { title: 'Terms of Use | Nazar’s School of Mathematics', description: 'Terms of use for Nazar’s School of Mathematics.' },
+  '/portal': { title: 'Portal Login | Nazar’s School of Mathematics', description: 'Secure portal access for Nazar’s School of Mathematics.', private: true },
+  '/admin': { title: 'Administrator Portal | Nazar’s School of Mathematics', description: 'Secure application review portal.', private: true },
+  '/parent': { title: 'Parent Dashboard | Nazar’s School of Mathematics', description: 'Secure parent portal.', private: true },
+  '/student': { title: 'Student Dashboard | Nazar’s School of Mathematics', description: 'Secure student portal.', private: true },
+  '/tutor': { title: 'Tutor Dashboard | Nazar’s School of Mathematics', description: 'Secure tutor portal.', private: true }
+}
+
+export function renderIndexHtml(source, requestPath = '/') {
+  const normalizedPath = requestPath.replace(/\/+$/, '') || '/'
+  const seoPath = routeSeo[normalizedPath] ? normalizedPath : '/'
+  const details = routeSeo[seoPath]
+  const canonicalUrl = `https://nazarschoolofmath.com${seoPath === '/' ? '/' : seoPath}`
+  const replacements = [
+    [/(<title>)[\s\S]*?(<\/title>)/, details.title],
+    [/(<meta name="description" content=")[^"]*(" \/>)/, details.description],
+    [/(<meta name="robots" content=")[^"]*(" \/>)/, details.private ? 'noindex, nofollow' : 'index, follow'],
+    [/(<link rel="canonical" href=")[^"]*(" \/>)/, canonicalUrl],
+    [/(<meta property="og:title" content=")[^"]*(" \/>)/, details.title],
+    [/(<meta property="og:description" content=")[^"]*(" \/>)/, details.description],
+    [/(<meta property="og:url" content=")[^"]*(" \/>)/, canonicalUrl],
+    [/(<meta name="twitter:title" content=")[^"]*(" \/>)/, details.title],
+    [/(<meta name="twitter:description" content=")[^"]*(" \/>)/, details.description]
+  ]
+  return replacements.reduce((html, [pattern, value]) => html.replace(pattern, `$1${escapeHtml(value)}$2`), source)
+}
 
 function sendJson(res, status, body) {
   if (res.writableEnded) return
@@ -228,10 +262,16 @@ export async function requestHandler(req, res) {
   }
   if (req.url?.startsWith('/api/')) return sendJson(res, 404, { error: 'API endpoint not found.' })
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end() }
-  const requested = req.url === '/' ? '/index.html' : decodeURIComponent(req.url.split('?')[0])
+  const requestedPath = decodeURIComponent(req.url.split('?')[0])
+  const requested = req.url === '/' ? '/index.html' : requestedPath
   const candidate = normalize(join(dist, requested))
   const safePath = !relative(dist, candidate).startsWith('..') && !isAbsolute(relative(dist, candidate)) ? candidate : join(dist, 'index.html')
   const file = existsSync(safePath) ? safePath : join(dist, 'index.html')
+  if (file === join(dist, 'index.html')) {
+    const html = renderIndexHtml(readFileSync(file, 'utf8'), requestedPath)
+    res.writeHead(200, { 'Content-Type': contentTypes['.html'], 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'strict-origin-when-cross-origin' })
+    return res.end(req.method === 'HEAD' ? undefined : html)
+  }
   res.writeHead(200, { 'Content-Type': contentTypes[extname(file)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'strict-origin-when-cross-origin' })
   if (req.method === 'HEAD') return res.end()
   createReadStream(file).pipe(res)

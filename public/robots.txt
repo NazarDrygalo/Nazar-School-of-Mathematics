@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+
+Disallow: /admin
+Disallow: /parent
+Disallow: /student
+Disallow: /tutor
+Disallow: /portal
+
+Sitemap: https://nazarschoolofmath.com/sitemap.xml

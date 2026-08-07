@@ -80,10 +80,11 @@ Check desktop and mobile layouts at minimum on Home, Resources, Apply, Portal Lo
 After all earlier checks pass, commit and push to `main` to trigger Render. Then verify:
 
 - `https://nazarschoolofmath.com` uses HTTPS and loads the new Resources page.
+- Clean public URLs such as `/math`, `/resources`, `/apply`, and `/contact` load directly and after a browser refresh.
+- `/robots.txt` and `/sitemap.xml` return successfully, and the sitemap has been submitted in Google Search Console.
 - Application submission reaches Supabase and Resend.
 - Portal login routes admin, parent, student, and tutor correctly.
 - Password-reset links return to the production site.
 - No browser console errors or failed API requests appear.
 
 Record the test application IDs and delete disposable records after verification.
-

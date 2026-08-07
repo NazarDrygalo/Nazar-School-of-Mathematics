@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { supabase } from './lib/supabase'
+import { navigateTo } from './routes'
 
 type RecordItem = Record<string, any>
 const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'your local time zone'
@@ -8,7 +9,7 @@ const displaySessionTime = (start?: string, end?: string) => start ? `${displayD
 const toLocalInput = (value?: string) => { if (!value) return ''; const date = new Date(value); return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16) }
 
 function Shell({ title, children }: { title: string; children: ReactNode }) {
-  return <section className="dashboard"><header className="dashboard-header"><div><p className="eyebrow">Secure portal</p><h1>{title}</h1><p>Information is visible only to the account associated with this portal.</p></div><button className="text-button" onClick={async () => { await supabase?.auth.signOut(); location.hash = '#/portal' }}>Sign out</button></header>{children}</section>
+  return <section className="dashboard"><header className="dashboard-header"><div><p className="eyebrow">Secure portal</p><h1>{title}</h1><p>Information is visible only to the account associated with this portal.</p></div><button className="text-button" onClick={async () => { await supabase?.auth.signOut(); navigateTo('portal') }}>Sign out</button></header>{children}</section>
 }
 function Notice({ children }: { children: ReactNode }) { return <p className="dashboard-message">{children}</p> }
 function List({ title, items, render }: { title: string; items: RecordItem[]; render: (item: RecordItem) => ReactNode }) { return <section className="portal-panel"><h2>{title}</h2>{items.length ? <div className="portal-list">{items.map(render)}</div> : <p className="empty-state">Nothing has been added yet.</p>}</section> }
