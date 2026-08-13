@@ -88,8 +88,11 @@ An authenticated user without a valid role is signed out and is not given portal
 
 The administrator can:
 
+- See action counters for applications needing review, incomplete onboarding, pending family requests, email-delivery issues, and accepted families without portal access.
+- Search applications by student, parent, email, course, grade, or subject, then narrow the list by status, subject, or required action.
 - Review applications and change their status.
-- Send and verify acceptance-email delivery.
+- Inspect school-notification and acceptance-email delivery states, including recorded failure details.
+- Verify whether the parent and student Authentication accounts are linked to their operational records.
 - Activate accepted students and assign active tutors.
 - Create tutor operational records.
 - Activate or deactivate tutors.
