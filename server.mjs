@@ -2,6 +2,7 @@ import { createServer } from 'node:http'
 import { createReadStream, existsSync, readFileSync } from 'node:fs'
 import { extname, isAbsolute, join, normalize, relative } from 'node:path'
 import { createSupabaseAdminClient, isSupabaseConfigured } from './server/supabase.mjs'
+import { createSessionChangeRequest, resolveSessionChangeRequest, saveTutorSession } from './server/workflow-notifications.mjs'
 
 // Local convenience only; hosted platforms should provide these through their environment.
 if (existsSync('.env')) {
@@ -187,7 +188,33 @@ async function changeApplicationStatus(req, res, applicationId) {
   }
 }
 
+async function workflowAction(req, res, action) {
+  try {
+    const body = await readJsonBody(req)
+    const result = await action(body)
+    return sendJson(res, 200, result)
+  } catch (error) {
+    console.error('Secure workflow action failed:', error.message)
+    return sendJson(res, error.status || 500, { error: error.message || 'The workflow action could not be completed.' })
+  }
+}
+
 export async function requestHandler(req, res) {
+  const tutorSessionMatch = req.url?.split('?')[0].match(/^\/api\/tutor\/sessions(?:\/([0-9a-f-]+))?$/i)
+  if (tutorSessionMatch) {
+    const sessionId = tutorSessionMatch[1] || null
+    if ((!sessionId && req.method !== 'POST') || (sessionId && req.method !== 'PATCH')) return sendJson(res, 405, { error: 'Method not allowed.' })
+    return workflowAction(req, res, body => saveTutorSession(req, body, sessionId))
+  }
+  if (req.url?.split('?')[0] === '/api/parent/session-change-requests') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' })
+    return workflowAction(req, res, body => createSessionChangeRequest(req, body))
+  }
+  const changeResolutionMatch = req.url?.split('?')[0].match(/^\/api\/admin\/session-change-requests\/([0-9a-f-]+)$/i)
+  if (changeResolutionMatch) {
+    if (req.method !== 'PATCH') return sendJson(res, 405, { error: 'Method not allowed.' })
+    return workflowAction(req, res, body => resolveSessionChangeRequest(req, changeResolutionMatch[1], body))
+  }
   const adminStatusMatch = req.url?.split('?')[0].match(/^\/api\/admin\/applications\/([0-9a-f-]+)\/status$/i)
   if (adminStatusMatch) {
     if (req.method !== 'PATCH') return sendJson(res, 405, { error: 'Method not allowed.' })

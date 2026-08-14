@@ -25,6 +25,8 @@ test('administrator dashboard retrieves and displays delivery and portal-link st
   assert.match(portal, /label="Acceptance email"/)
   assert.match(portal, /label="Parent portal"/)
   assert.match(portal, /label="Student portal"/)
+  assert.match(portal, /from\('notification_deliveries'\).*eq\('status', 'failed'\)/)
+  assert.match(portal, /Messages requiring attention/)
 })
 
 test('administrator dashboard controls collapse for mobile screens', async () => {

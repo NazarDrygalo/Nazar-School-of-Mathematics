@@ -51,6 +51,21 @@ test('administrator endpoint refuses to operate when secure server configuration
   assert.match(response.body.error, /not configured/i)
 })
 
+test('workflow mutation endpoints reject unsupported methods', async () => {
+  const tutor = await request({ url: '/api/tutor/sessions' })
+  const parent = await request({ url: '/api/parent/session-change-requests' })
+  const admin = await request({ method: 'POST', url: '/api/admin/session-change-requests/00000000-0000-4000-8000-000000000000' })
+  assert.equal(tutor.status, 405)
+  assert.equal(parent.status, 405)
+  assert.equal(admin.status, 405)
+})
+
+test('workflow mutation endpoints require secure server configuration', async () => {
+  const response = await request({ method: 'POST', url: '/api/parent/session-change-requests', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ request_id: crypto.randomUUID(), session_id: crypto.randomUUID(), request_type: 'cancel' }) })
+  assert.equal(response.status, 503)
+  assert.match(response.body.error, /not configured/i)
+})
+
 test('clean routes receive route-specific canonical and indexing metadata', () => {
   const source = '<title>Home</title><meta name="description" content="Home" /><meta name="robots" content="index, follow" /><link rel="canonical" href="https://nazarschoolofmath.com/" /><meta property="og:title" content="Home" /><meta property="og:description" content="Home" /><meta property="og:url" content="https://nazarschoolofmath.com/" /><meta name="twitter:title" content="Home" /><meta name="twitter:description" content="Home" />'
   const publicPage = renderIndexHtml(source, '/resources')

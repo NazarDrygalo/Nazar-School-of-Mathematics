@@ -25,3 +25,12 @@ test('retention cleanup is not callable by browser roles', async () => {
   assert.match(sql, /grant execute on function public\.purge_expired_tutoring_data\(interval\) to service_role/)
 })
 
+test('workflow notifications are tracked, admin-readable, and idempotent', async () => {
+  const sql = await migration('20260813_workflow_notifications.sql')
+  assert.match(sql, /create table if not exists public\.notification_deliveries/)
+  assert.match(sql, /event_key text not null unique/)
+  assert.match(sql, /admins read notification deliveries/)
+  assert.match(sql, /resolve_session_change_request_server/)
+  assert.match(sql, /grant execute on function public\.resolve_session_change_request_server\(uuid, text, uuid\) to service_role/)
+  assert.match(sql, /'notification_deliveries', deleted_notifications/)
+})

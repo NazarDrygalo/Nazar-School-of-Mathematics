@@ -189,8 +189,13 @@ The platform sends only the workflow messages currently required:
 - A new-application notification to the school.
 - An application-received confirmation to the parent.
 - One acceptance email when an administrator accepts the application.
+- A session-created or session-updated email to the linked parent.
+- A session-change-request email to the administrator.
+- A request-resolution email to the linked parent and tutor.
 
-The platform does not currently send automated declined, scheduling, reminder, cancellation, assignment, or progress emails.
+The platform does not currently send lesson reminders, assignment notifications, progress emails, or general marketing messages.
+
+Workflow changes are saved before email delivery is attempted. Each attempt has a unique event key, delivery state, recipient, timestamp, and error detail in `notification_deliveries`. Retrying the same operation does not resend an already delivered message. Administrators can inspect failed workflow messages in the operations dashboard.
 
 Resend delivery depends on a valid API key and sender configuration. The Resend testing sender has recipient restrictions; production delivery should use a verified sending domain and the configured `FROM_EMAIL` value.
 
@@ -203,6 +208,7 @@ The `public.purge_expired_tutoring_data()` function removes eligible records old
 - Applications.
 - Historical session notes.
 - Session-change requests.
+- Workflow email-delivery records.
 - Progress entries.
 - Assignments.
 - Ended sessions and old cancelled sessions.

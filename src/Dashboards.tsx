@@ -20,6 +20,15 @@ async function hasPortalRole(expectedRole: 'parent' | 'student' | 'tutor') {
   const { data: role } = await supabase.from('user_roles').select('role').eq('user_id', session.session.user.id).maybeSingle()
   return role?.role === expectedRole
 }
+async function portalRequest(path: string, method: 'POST' | 'PATCH', body: RecordItem) {
+  if (!supabase) throw new Error('Portal access is not configured.')
+  const { data } = await supabase.auth.getSession()
+  if (!data.session) throw new Error('Your session has expired. Please sign in again.')
+  const response = await fetch(path, { method, headers: { Authorization: `Bearer ${data.session.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const result = await response.json().catch(() => ({ error: `The server returned an invalid response (HTTP ${response.status}).` }))
+  if (!response.ok) throw new Error(result.error || 'The request could not be completed.')
+  return result
+}
 
 export function ParentDashboard() {
   const [data, setData] = useState<RecordItem>({ students: [], sessions: [], assignments: [], progress: [], requests: [] })
@@ -44,13 +53,15 @@ export function ParentDashboard() {
   async function requestChange(event: FormEvent) {
     event.preventDefault(); if (!supabase || busy) return
     setBusy(true); setError(''); setMessage('')
-    const { data: userData } = await supabase.auth.getUser()
     const requestedStart = changeRequest.request_type === 'reschedule' ? new Date(changeRequest.requested_starts_at) : null
-    if (!userData.user || (requestedStart && Number.isNaN(requestedStart.getTime()))) { setBusy(false); setError('Enter a valid requested date and time.'); return }
-    const { error: requestError } = await supabase.from('session_change_requests').insert({ session_id: changeRequest.session_id, requested_by: userData.user.id, request_type: changeRequest.request_type, requested_starts_at: requestedStart?.toISOString() || null, reason: changeRequest.reason || null })
-    setBusy(false)
-    if (requestError) { setError('The request could not be saved. Requests must be made at least three days before the lesson, and only one request may be pending per session.'); return }
-    setChangeRequest({ session_id: '', request_type: 'reschedule', requested_starts_at: '', reason: '' }); setMessage('Your session change request was submitted for administrator review.'); await load()
+    if (requestedStart && Number.isNaN(requestedStart.getTime())) { setBusy(false); setError('Enter a valid requested date and time.'); return }
+    try {
+      const result = await portalRequest('/api/parent/session-change-requests', 'POST', { request_id: crypto.randomUUID(), ...changeRequest, requested_starts_at: requestedStart?.toISOString() || null })
+      setChangeRequest({ session_id: '', request_type: 'reschedule', requested_starts_at: '', reason: '' })
+      setMessage(result.warning ? `Your request was saved. ${result.warning}` : 'Your session change request was submitted and the administrator was notified.')
+      await load()
+    } catch (requestError) { setError(requestError instanceof Error ? requestError.message : 'The request could not be saved.') }
+    finally { setBusy(false) }
   }
   const eligibleSessions = data.sessions.filter((session: RecordItem) => session.status === 'scheduled' && new Date(session.starts_at).getTime() >= Date.now() + 3 * 24 * 60 * 60 * 1000 && !data.requests.some((request: RecordItem) => request.session_id === session.id && request.status === 'pending'))
   return <Shell title={`Parent Dashboard${data.profile ? ` — ${data.profile.first_name}` : ''}`}>{error && <Notice>{error}</Notice>}{message && <Notice>{message}</Notice>}<div className="portal-grid"><List title="Students" items={data.students} render={student => <article key={student.id}><b>{student.first_name} {student.last_name}</b><span>{student.grade || 'Grade not listed'} · {student.current_course || 'Current subject not listed'}</span></article>} /><List title="Upcoming sessions" items={data.sessions} render={session => <article key={session.id}><b>{displaySessionTime(session.starts_at, session.ends_at)}</b><span>{session.students?.first_name} {session.students?.last_name} · {session.status}</span>{session.meeting_url && <a href={session.meeting_url} target="_blank" rel="noreferrer">Join online session</a>}</article>} /><List title="Assignments" items={data.assignments} render={assignment => <article key={assignment.id}><b>{assignment.title}</b><span>{assignment.students?.first_name} {assignment.students?.last_name} · {assignment.status}</span><small>{assignment.instructions || 'No additional instructions.'}</small></article>} /><List title="Progress updates" items={data.progress} render={entry => <article key={entry.id}><b>{entry.area}</b><span>{entry.students?.first_name} {entry.students?.last_name} · Mastery {entry.mastery_level || '—'}/5</span><small>{entry.notes || 'No notes provided.'}</small></article>} /></div><div className="session-tools"><ToolForm title="Request a cancellation or new time" onSubmit={requestChange} busy={busy}><p className="policy-note">Please submit requests at least three days before the scheduled lesson. Requests remain pending until reviewed.</p><label>Session<select required value={changeRequest.session_id} onChange={event => setChangeRequest({ ...changeRequest, session_id: event.target.value })}><option value="">Select an eligible session</option>{eligibleSessions.map((session: RecordItem) => <option key={session.id} value={session.id}>{session.students?.first_name} — {displayDate(session.starts_at)}</option>)}</select></label><label>Request type<select value={changeRequest.request_type} onChange={event => setChangeRequest({ ...changeRequest, request_type: event.target.value, requested_starts_at: '' })}><option value="reschedule">Request a new time</option><option value="cancel">Request cancellation</option></select></label>{changeRequest.request_type === 'reschedule' && <label>Requested date and time <small>Shown in {browserTimeZone}</small><input required type="datetime-local" value={changeRequest.requested_starts_at} onChange={event => setChangeRequest({ ...changeRequest, requested_starts_at: event.target.value })} /></label>}<label>Optional note<textarea value={changeRequest.reason} onChange={event => setChangeRequest({ ...changeRequest, reason: event.target.value })} /></label></ToolForm><List title="Change requests" items={data.requests} render={request => <article key={request.id}><b>{request.request_type === 'cancel' ? 'Cancellation request' : 'New-time request'}</b><span>{request.tutoring_sessions?.students?.first_name} · {request.status}</span><small>{request.requested_starts_at ? `Requested: ${displayDate(request.requested_starts_at)}` : `Session: ${displayDate(request.tutoring_sessions?.starts_at)}`}</small></article>} /></div></Shell>
@@ -111,11 +122,19 @@ export function TutorDashboard() {
     } else if (kind === 'assignment') payload = { ...assignment, tutor_id: data.tutor.id, due_at: assignment.due_at ? new Date(assignment.due_at).toISOString() : null }
     else if (kind === 'progress') { table = 'student_progress'; payload = { ...progress, tutor_id: data.tutor.id, mastery_level: Number(progress.mastery_level) } }
     else { table = 'session_notes'; payload = { ...note, tutor_id: data.tutor.id, parent_summary: note.parent_summary || null } }
-    const saveResult = kind === 'session_update' ? await supabase.from(table).update(payload).eq('id', sessionEdit.id) : await supabase.from(table).insert(payload)
-    const saveError = saveResult.error
+    let warning = ''
+    try {
+      if (kind === 'session' || kind === 'session_update') {
+        const result = await portalRequest(kind === 'session' ? '/api/tutor/sessions' : `/api/tutor/sessions/${sessionEdit.id}`, kind === 'session' ? 'POST' : 'PATCH', { ...payload, mutation_id: crypto.randomUUID() })
+        warning = result.warning || ''
+      } else {
+        const saveResult = await supabase.from(table).insert(payload)
+        if (saveResult.error) throw new Error('The record could not be saved. Confirm the student is actively assigned to you and try again.')
+      }
+    } catch (saveError) { setBusy(false); setError(saveError instanceof Error ? saveError.message : 'The record could not be saved.'); return }
     setBusy(false)
-    if (saveError) { setError('The record could not be saved. Confirm the student is actively assigned to you and try again.'); return }
-    setMessage(`${kind === 'note' ? 'Session note' : kind === 'session_update' ? 'Session changes' : kind[0].toUpperCase() + kind.slice(1)} saved.`)
+    const savedLabel = kind === 'note' ? 'Session note' : kind === 'session_update' ? 'Session changes' : kind[0].toUpperCase() + kind.slice(1)
+    setMessage(warning ? `${savedLabel} saved. ${warning}` : `${savedLabel} saved${kind === 'session' || kind === 'session_update' ? ' and the family was notified' : ''}.`)
     if (kind === 'session') setSession({ student_id: '', starts_at: '', duration_minutes: '60', meeting_url: '', status: 'scheduled' })
     if (kind === 'session_update') setSessionEdit({ id: '', starts_at: '', duration_minutes: '60', meeting_url: '', status: 'scheduled' })
     if (kind === 'assignment') setAssignment({ student_id: '', title: '', instructions: '', due_at: '' })

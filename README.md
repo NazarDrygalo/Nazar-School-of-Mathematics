@@ -67,7 +67,9 @@ Run `supabase/migrations/20260806_session_changes.sql` next. It adds parent canc
 
 Run `supabase/migrations/20260806_tutor_management.sql` after that. It lets administrators create and activate/deactivate tutor operational records. It does not create Auth users or send invitations.
 
-Run `supabase/migrations/20260806_data_retention.sql` last. It adds a service-role-only cleanup function that deletes applications and historical portal activity after seven days while preserving active profiles, active tutor assignments, and future sessions.
+Run `supabase/migrations/20260806_data_retention.sql` after that. It adds a service-role-only cleanup function that deletes applications and historical portal activity after seven days while preserving active profiles, active tutor assignments, and future sessions.
+
+Run [`supabase/migrations/20260813_workflow_notifications.sql`](supabase/migrations/20260813_workflow_notifications.sql) last. It adds idempotent email-delivery tracking, administrator-only visibility into failures, and an atomic service-role function for resolving session-change requests. Tutor session creation/updates, parent change requests, and administrator resolutions then use authenticated server endpoints so workflow emails cannot be triggered anonymously or sent directly from browser code.
 
 To enforce the policy automatically, enable Supabase Cron in the dashboard and schedule the cleanup once per day from the SQL Editor:
 
@@ -84,6 +86,14 @@ The example runs daily at 03:17 UTC. Confirm the job under Supabase Dashboard â†
 Create or invite each person in Supabase Authentication, then link their Auth UUID to the appropriate `parents`, `students`, or `tutors` record and add the matching `user_roles` row. The comments at the bottom of the migration include the exact SQL patterns. Only create portal accounts for accepted families and active tutors.
 
 Parents can view their students, sessions, assignments, and progress. Students can view their own sessions, assignments, and progress. Administrators can activate an accepted student and assign one active tutor from the application detail panel. Tutors can then schedule sessions and create assignments and progress updates only for actively assigned students. Session times are saved as UTC instants and displayed in each viewer's local time zone.
+
+Workflow email behavior:
+
+- A tutor scheduling or editing a session emails the linked parent.
+- A parent requesting cancellation or a new time emails the administrator.
+- Approving or declining a request emails both the linked parent and tutor.
+- Every delivery attempt is recorded in `notification_deliveries`; unique event keys prevent retries from producing duplicate messages.
+- The operational change remains saved if Resend fails, and the administrator dashboard displays the failure details.
 
 The onboarding panel intentionally does not create Auth accounts. After accepting a family, invite only the parent and/or student who should receive portal access, then link the Auth UUID and role:
 
