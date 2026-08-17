@@ -4,11 +4,13 @@ Use a non-production Supabase project for RLS testing first. Do not deploy code 
 
 ## 1. Database migrations
 
-Existing projects that already have the first five migrations should run only the final three, in this order:
+Existing projects that already have the first five migrations should run the remaining migrations in this order:
 
-1. `supabase/migrations/20260806_session_changes.sql`
-2. `supabase/migrations/20260806_tutor_management.sql`
-3. `supabase/migrations/20260806_data_retention.sql`
+1. [`supabase/migrations/20260806_session_changes.sql`](supabase/migrations/20260806_session_changes.sql)
+2. [`supabase/migrations/20260806_tutor_management.sql`](supabase/migrations/20260806_tutor_management.sql)
+3. [`supabase/migrations/20260806_data_retention.sql`](supabase/migrations/20260806_data_retention.sql)
+4. [`supabase/migrations/20260813_workflow_notifications.sql`](supabase/migrations/20260813_workflow_notifications.sql)
+5. [`supabase/migrations/20260817_security_hardening.sql`](supabase/migrations/20260817_security_hardening.sql)
 
 For a new Supabase project, run the complete order:
 
@@ -20,6 +22,8 @@ For a new Supabase project, run the complete order:
 6. `20260806_session_changes.sql`
 7. `20260806_tutor_management.sql`
 8. `20260806_data_retention.sql`
+9. `20260813_workflow_notifications.sql`
+10. `20260817_security_hardening.sql`
 
 Afterward, run the checks in `supabase/RLS_VERIFICATION.md` with disposable test records.
 
@@ -47,6 +51,8 @@ Confirm these values exist in Render and are not exposed through `VITE_` variabl
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_PUBLISHABLE_KEY`
+
+Also set `PUBLIC_SITE_ORIGIN=https://nazarschoolofmath.com`. `RATE_LIMIT_SECRET` is optional; when omitted, the server uses the server-only Supabase service-role key to create irreversible rate-limit hashes.
 
 Use `npm run build` as the build command and `npm start` as the start command.
 

@@ -1,4 +1,5 @@
 import { createServer } from 'node:http'
+import { createHmac, randomBytes } from 'node:crypto'
 import { createReadStream, existsSync, readFileSync } from 'node:fs'
 import { extname, isAbsolute, join, normalize, relative } from 'node:path'
 import { createSupabaseAdminClient, isSupabaseConfigured } from './server/supabase.mjs'
@@ -33,7 +34,34 @@ const routeSeo = {
   '/tutor': { title: 'Tutor Dashboard | Nazar’s School of Mathematics', description: 'Secure tutor portal.', private: true }
 }
 
-export function renderIndexHtml(source, requestPath = '/') {
+const siteOrigin = process.env.PUBLIC_SITE_ORIGIN || 'https://nazarschoolofmath.com'
+const allowedOrigins = new Set([siteOrigin, `http://localhost:${port}`, `http://127.0.0.1:${port}`])
+
+function securityHeaders(nonce = '') {
+  const supabaseOrigin = (() => {
+    try { return new URL(process.env.SUPABASE_URL || '').origin }
+    catch { return '' }
+  })()
+  const connectSources = ["'self'", supabaseOrigin, supabaseOrigin ? supabaseOrigin.replace(/^https:/, 'wss:') : ''].filter(Boolean).join(' ')
+  const scriptSources = ["'self'", nonce ? `'nonce-${nonce}'` : ''].filter(Boolean).join(' ')
+  return {
+    'Content-Security-Policy': `default-src 'self'; base-uri 'self'; connect-src ${connectSources}; font-src 'self' https://fonts.gstatic.com data:; form-action 'self'; frame-ancestors 'none'; frame-src 'none'; img-src 'self' data:; object-src 'none'; script-src ${scriptSources}; style-src 'self' https://fonts.googleapis.com; upgrade-insecure-requests`,
+    'Cross-Origin-Opener-Policy': 'same-origin',
+    'Cross-Origin-Resource-Policy': 'same-origin',
+    'Permissions-Policy': 'camera=(), geolocation=(), microphone=(), payment=(), usb=()',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'X-Permitted-Cross-Domain-Policies': 'none'
+  }
+}
+
+function writeHead(res, status, headers = {}, nonce = '') {
+  res.writeHead(status, { ...securityHeaders(nonce), ...headers })
+}
+
+export function renderIndexHtml(source, requestPath = '/', nonce = '') {
   const normalizedPath = requestPath.replace(/\/+$/, '') || '/'
   const seoPath = routeSeo[normalizedPath] ? normalizedPath : '/'
   const details = routeSeo[seoPath]
@@ -49,12 +77,13 @@ export function renderIndexHtml(source, requestPath = '/') {
     [/(<meta name="twitter:title" content=")[^"]*(" \/>)/, details.title],
     [/(<meta name="twitter:description" content=")[^"]*(" \/>)/, details.description]
   ]
-  return replacements.reduce((html, [pattern, value]) => html.replace(pattern, `$1${escapeHtml(value)}$2`), source)
+  const rendered = replacements.reduce((html, [pattern, value]) => html.replace(pattern, `$1${escapeHtml(value)}$2`), source)
+  return nonce ? rendered.replace(/<script type="application\/ld\+json">/g, `<script type="application/ld+json" nonce="${escapeHtml(nonce)}">`) : rendered
 }
 
-function sendJson(res, status, body) {
+function sendJson(res, status, body, headers = {}) {
   if (res.writableEnded) return
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'strict-origin-when-cross-origin' })
+  writeHead(res, status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers })
   res.end(JSON.stringify(body))
 }
 function clean(value, max = 2000) { return typeof value === 'string' ? value.trim().slice(0, max) : '' }
@@ -89,11 +118,35 @@ function applicationPayload(data, submissionId) {
     days: 'Not provided', times: 'Not provided', timezone: 'Not provided'
   }
 }
-async function saveApplication(data, submissionId) {
-  const supabase = createSupabaseAdminClient()
+async function saveApplication(data, submissionId, supabase) {
   const { data: result, error } = await supabase.rpc('submit_tutoring_application', { application: applicationPayload(data, submissionId) })
   if (error || !result?.[0]?.application_id) throw error || new Error('Supabase did not return an application ID.')
   return { supabase, applicationId: result[0].application_id }
+}
+
+function rateLimitKey(namespace, value) {
+  const secret = process.env.RATE_LIMIT_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || 'local-development-rate-limit'
+  return createHmac('sha256', secret).update(`${namespace}:${value}`).digest('hex')
+}
+
+function clientAddress(req) {
+  return clean(req.headers['cf-connecting-ip'], 100)
+    || clean(req.headers['x-forwarded-for'], 500).split(',')[0].trim()
+    || clean(req.socket?.remoteAddress, 100)
+    || 'unknown'
+}
+
+async function claimApplicationRateLimit(supabase, req, email) {
+  const checks = [
+    { rate_key: rateLimitKey('ip', clientAddress(req)), max_requests: 5, window_seconds: 3600 },
+    { rate_key: rateLimitKey('email', clean(email).toLowerCase()), max_requests: 3, window_seconds: 86400 }
+  ]
+  for (const check of checks) {
+    const { data, error } = await supabase.rpc('claim_application_submission_rate_limit', check)
+    if (error) throw Object.assign(new Error('Application rate limiting is unavailable.'), { status: 503 })
+    if (!data) return false
+  }
+  return true
 }
 async function recordNotificationStatus(supabase, applicationId, status, error = null) {
   const { error: updateError } = await supabase.from('applications').update({ notification_status: status, notification_attempted_at: new Date().toISOString(), notification_error: error }).eq('id', applicationId)
@@ -222,6 +275,11 @@ export async function requestHandler(req, res) {
   }
   if (req.url === '/api/application' && req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' })
   if (req.method === 'POST' && req.url === '/api/application') {
+    if (!clean(req.headers['content-type'], 200).toLowerCase().startsWith('application/json')) {
+      return sendJson(res, 415, { error: 'The application request must use JSON.' })
+    }
+    const origin = clean(req.headers.origin, 500)
+    if (origin && !allowedOrigins.has(origin)) return sendJson(res, 403, { error: 'This application request came from an unauthorized site.' })
     let raw = ''
     let bodyTooLarge = false
     req.on('data', (chunk) => {
@@ -247,9 +305,18 @@ export async function requestHandler(req, res) {
         if (requestId && recentRequests.has(requestId)) return sendJson(res, 409, { error: 'This application was already submitted. Please wait for a response.' })
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) return sendJson(res, 400, { error: 'Please refresh the page and try submitting again.' })
         if (!isSupabaseConfigured()) return sendJson(res, 503, { error: 'Applications are not configured for secure submission yet. Please contact the school directly by email.' })
+        const supabase = createSupabaseAdminClient()
+        let withinRateLimit
+        try {
+          withinRateLimit = await claimApplicationRateLimit(supabase, req, data.email)
+        } catch (rateLimitError) {
+          console.error('Application rate limit failed:', rateLimitError.message)
+          return sendJson(res, rateLimitError.status || 503, { error: 'Applications are temporarily unavailable. Please try again shortly.' })
+        }
+        if (!withinRateLimit) return sendJson(res, 429, { error: 'Too many applications were submitted. Please wait and try again.' }, { 'Retry-After': '3600' })
         let stored
         try {
-          stored = await saveApplication(data, requestId)
+          stored = await saveApplication(data, requestId, supabase)
         } catch (saveError) {
           console.error('Supabase application save failed:', saveError.message)
           return sendJson(res, 502, { error: 'We could not securely save your application. Please try again or contact the school directly.' })
@@ -288,24 +355,36 @@ export async function requestHandler(req, res) {
     return
   }
   if (req.url?.startsWith('/api/')) return sendJson(res, 404, { error: 'API endpoint not found.' })
-  if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end() }
-  const requestedPath = decodeURIComponent(req.url.split('?')[0])
+  if (req.method !== 'GET' && req.method !== 'HEAD') { writeHead(res, 405); return res.end() }
+  let requestedPath
+  try {
+    requestedPath = decodeURIComponent(req.url.split('?')[0])
+  } catch {
+    return sendJson(res, 400, { error: 'The request URL is malformed.' })
+  }
   const requested = req.url === '/' ? '/index.html' : requestedPath
   const candidate = normalize(join(dist, requested))
   const safePath = !relative(dist, candidate).startsWith('..') && !isAbsolute(relative(dist, candidate)) ? candidate : join(dist, 'index.html')
   const file = existsSync(safePath) ? safePath : join(dist, 'index.html')
   if (file === join(dist, 'index.html')) {
-    const html = renderIndexHtml(readFileSync(file, 'utf8'), requestedPath)
-    res.writeHead(200, { 'Content-Type': contentTypes['.html'], 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'strict-origin-when-cross-origin' })
+    const nonce = randomBytes(16).toString('base64')
+    const html = renderIndexHtml(readFileSync(file, 'utf8'), requestedPath, nonce)
+    writeHead(res, 200, { 'Content-Type': contentTypes['.html'] }, nonce)
     return res.end(req.method === 'HEAD' ? undefined : html)
   }
-  res.writeHead(200, { 'Content-Type': contentTypes[extname(file)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'strict-origin-when-cross-origin' })
+  writeHead(res, 200, { 'Content-Type': contentTypes[extname(file)] || 'application/octet-stream' })
   if (req.method === 'HEAD') return res.end()
   createReadStream(file).pipe(res)
 }
 
 export function startServer(listenPort = port) {
-  return createServer(requestHandler).listen(listenPort, () => console.log(`Nazar's School of Mathematics is running at http://localhost:${listenPort}`))
+  return createServer((req, res) => {
+    Promise.resolve(requestHandler(req, res)).catch((error) => {
+      console.error('Unhandled request error:', error.message)
+      if (!res.headersSent) return sendJson(res, 500, { error: 'The request could not be completed.' })
+      if (!res.writableEnded) res.end()
+    })
+  }).listen(listenPort, () => console.log(`Nazar's School of Mathematics is running at http://localhost:${listenPort}`))
 }
 
 if (process.argv[1]?.replaceAll('\\', '/').endsWith('/server.mjs')) startServer()

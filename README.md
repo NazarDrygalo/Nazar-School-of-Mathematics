@@ -40,8 +40,12 @@ Optional variables:
 
 ```env
 APPLICATION_RECIPIENT=nazar.drygalo@gmail.com
+PUBLIC_SITE_ORIGIN=https://nazarschoolofmath.com
+RATE_LIMIT_SECRET=generate-a-long-random-value
 PORT=3000
 ```
+
+`RATE_LIMIT_SECRET` is used only to create irreversible application rate-limit keys. If omitted, the server-only Supabase service-role key is used instead. The server rejects non-JSON application requests and browser submissions from origins other than `PUBLIC_SITE_ORIGIN`.
 
 Without `FROM_EMAIL`, the site uses Resend’s `onboarding@resend.dev` testing sender. Resend only permits that sender to deliver to the email address associated with the Resend account, so this is suitable while the school recipient email is that account email. To accept applications at any other address, add a verified domain and set `FROM_EMAIL` to an address at that domain. The local server reads `.env` for convenience; production hosts should configure the same values in their environment settings. Until the required variables are supplied, the application endpoint returns a clear configuration error instead of claiming a submission was delivered.
 
@@ -69,7 +73,9 @@ Run `supabase/migrations/20260806_tutor_management.sql` after that. It lets admi
 
 Run `supabase/migrations/20260806_data_retention.sql` after that. It adds a service-role-only cleanup function that deletes applications and historical portal activity after seven days while preserving active profiles, active tutor assignments, and future sessions.
 
-Run [`supabase/migrations/20260813_workflow_notifications.sql`](supabase/migrations/20260813_workflow_notifications.sql) last. It adds idempotent email-delivery tracking, administrator-only visibility into failures, and an atomic service-role function for resolving session-change requests. Tutor session creation/updates, parent change requests, and administrator resolutions then use authenticated server endpoints so workflow emails cannot be triggered anonymously or sent directly from browser code.
+Run [`supabase/migrations/20260813_workflow_notifications.sql`](supabase/migrations/20260813_workflow_notifications.sql) next. It adds idempotent email-delivery tracking, administrator-only visibility into failures, and an atomic service-role function for resolving session-change requests. Tutor session creation/updates, parent change requests, and administrator resolutions then use authenticated server endpoints so workflow emails cannot be triggered anonymously or sent directly from browser code.
+
+Then run [`supabase/migrations/20260817_security_hardening.sql`](supabase/migrations/20260817_security_hardening.sql). It separates family-visible session summaries from private tutor notes, prevents browser clients from bypassing notification-producing server workflows, and adds persistent HMAC-based rate limiting for public applications. Deploy the matching application code immediately after running this migration because direct session and request mutations are intentionally revoked.
 
 To enforce the policy automatically, enable Supabase Cron in the dashboard and schedule the cleanup once per day from the SQL Editor:
 

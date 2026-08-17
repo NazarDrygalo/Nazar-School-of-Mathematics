@@ -20,7 +20,7 @@ function request({ method = 'GET', url = '/', headers = {}, body = '' }) {
       if (chunk) chunks.push(Buffer.from(chunk))
       originalEnd()
       const text = Buffer.concat(chunks).toString('utf8')
-      resolve({ status: res.statusCode, body: text ? JSON.parse(text) : null })
+      resolve({ status: res.statusCode, headers: res.headers || {}, body: text ? JSON.parse(text) : null })
       return res
     }
     Promise.resolve(requestHandler(req, res)).catch(reject)
@@ -51,6 +51,27 @@ test('administrator endpoint refuses to operate when secure server configuration
   assert.match(response.body.error, /not configured/i)
 })
 
+test('application endpoint requires JSON and rejects unauthorized browser origins', async () => {
+  const wrongType = await request({ method: 'POST', url: '/api/application', headers: { 'content-type': 'text/plain' }, body: '{}' })
+  const wrongOrigin = await request({ method: 'POST', url: '/api/application', headers: { 'content-type': 'application/json', origin: 'https://attacker.example' }, body: '{}' })
+  assert.equal(wrongType.status, 415)
+  assert.equal(wrongOrigin.status, 403)
+})
+
+test('malformed URL encoding returns a controlled error', async () => {
+  const response = await request({ url: '/%E0%A4%A' })
+  assert.equal(response.status, 400)
+  assert.match(response.body.error, /malformed/i)
+})
+
+test('responses include browser security headers', async () => {
+  const response = await request({ url: '/api/unknown' })
+  assert.match(response.headers['Content-Security-Policy'], /frame-ancestors 'none'/)
+  assert.equal(response.headers['Strict-Transport-Security'], 'max-age=31536000; includeSubDomains')
+  assert.match(response.headers['Permissions-Policy'], /camera=\(\)/)
+  assert.equal(response.headers['X-Content-Type-Options'], 'nosniff')
+})
+
 test('workflow mutation endpoints reject unsupported methods', async () => {
   const tutor = await request({ url: '/api/tutor/sessions' })
   const parent = await request({ url: '/api/parent/session-change-requests' })
@@ -74,4 +95,9 @@ test('clean routes receive route-specific canonical and indexing metadata', () =
   assert.match(publicPage, /canonical" href="https:\/\/nazarschoolofmath\.com\/resources"/)
   assert.match(publicPage, /robots" content="index, follow"/)
   assert.match(privatePage, /robots" content="noindex, nofollow"/)
+})
+
+test('structured data receives the CSP nonce used for rendered HTML', () => {
+  const rendered = renderIndexHtml('<script type="application/ld+json">{}</script>', '/', 'test-nonce')
+  assert.match(rendered, /type="application\/ld\+json" nonce="test-nonce"/)
 })

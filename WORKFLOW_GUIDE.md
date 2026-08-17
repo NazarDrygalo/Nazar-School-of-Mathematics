@@ -135,7 +135,7 @@ An active tutor can work only with students currently assigned to that tutor. Th
 - Edit session times, duration, meeting links, and status.
 - Create assignments.
 - Record progress updates.
-- Add session notes and an optional parent summary.
+- Add a private session note and an optional family summary. These are stored separately: parents can read only the family summary, never the private tutor note.
 
 Database policies require both an active tutor and an active tutor/student assignment before student-specific records can be created or changed.
 
@@ -178,7 +178,9 @@ Security is enforced at multiple levels:
 - **Assignment checks:** Tutors can write student data only when an active assignment connects the tutor and student.
 - **Administrator API checks:** Sensitive status changes require a valid access token and the `admin` role.
 - **Server-only credentials:** The Supabase service-role key and Resend API key remain on the server and are never exposed through `VITE_` variables.
-- **Security headers:** The Node server sets browser security headers for API and static responses.
+- **Security headers:** The Node server sets CSP, HSTS, clickjacking protection, browser-permission restrictions, and related headers for API and static responses.
+- **Application abuse protection:** Public applications require JSON, validate the browser origin, and use persistent HMAC-based IP and email rate limits without storing raw IP or email values in the rate-limit table.
+- **Workflow enforcement:** Session scheduling, change requests, resolutions, and session notes use narrow server endpoints or database functions; direct browser mutations that could bypass audit or notification behavior are revoked.
 
 Frontend controls improve usability, but database policies are the authoritative access boundary.
 
@@ -279,6 +281,8 @@ SUPABASE_URL=...
 SUPABASE_SERVICE_ROLE_KEY=...
 VITE_SUPABASE_URL=...
 VITE_SUPABASE_PUBLISHABLE_KEY=...
+PUBLIC_SITE_ORIGIN=https://nazarschoolofmath.com
+RATE_LIMIT_SECRET=...
 ```
 
 `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` are browser-safe. `SUPABASE_SERVICE_ROLE_KEY` and `RESEND_API_KEY` are private server credentials and must never use the `VITE_` prefix.

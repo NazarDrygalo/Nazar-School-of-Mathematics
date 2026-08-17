@@ -31,23 +31,24 @@ async function portalRequest(path: string, method: 'POST' | 'PATCH', body: Recor
 }
 
 export function ParentDashboard() {
-  const [data, setData] = useState<RecordItem>({ students: [], sessions: [], assignments: [], progress: [], requests: [] })
+  const [data, setData] = useState<RecordItem>({ students: [], sessions: [], assignments: [], progress: [], summaries: [], requests: [] })
   const [error, setError] = useState(''); const [message, setMessage] = useState(''); const [busy, setBusy] = useState(false)
   const [changeRequest, setChangeRequest] = useState({ session_id: '', request_type: 'reschedule', requested_starts_at: '', reason: '' })
   async function load() {
     if (!supabase) return setError('Portal access is not configured.')
     if (!await hasPortalRole('parent')) { setError('A parent portal account is required.'); return }
-    const [profile, students, sessions, assignments, progress, requests] = await Promise.all([
+    const [profile, students, sessions, assignments, progress, summaries, requests] = await Promise.all([
       supabase.from('parents').select('first_name,last_name').maybeSingle(),
       supabase.from('students').select('id,first_name,last_name,grade,current_course').order('first_name'),
       supabase.from('tutoring_sessions').select('id,starts_at,ends_at,status,meeting_url,students(first_name,last_name),tutors(first_name,last_name)').order('starts_at'),
       supabase.from('assignments').select('id,title,instructions,due_at,status,students(first_name,last_name)').order('due_at'),
       supabase.from('student_progress').select('id,area,mastery_level,notes,recorded_at,students(first_name,last_name)').order('recorded_at', { ascending: false }),
+      supabase.from('session_parent_summaries').select('session_id,summary,updated_at,tutoring_sessions(starts_at,students(first_name,last_name))').order('updated_at', { ascending: false }),
       supabase.from('session_change_requests').select('id,session_id,request_type,requested_starts_at,status,created_at,tutoring_sessions(starts_at,students(first_name,last_name))').order('created_at', { ascending: false })
     ])
-    const failed = [profile, students, sessions, assignments, progress, requests].find(result => result.error)
+    const failed = [profile, students, sessions, assignments, progress, summaries, requests].find(result => result.error)
     if (failed?.error) return setError('We could not load this portal. Confirm the session-change migration has been run, then try again.')
-    setData({ profile: profile.data, students: students.data || [], sessions: sessions.data || [], assignments: assignments.data || [], progress: progress.data || [], requests: requests.data || [] })
+    setData({ profile: profile.data, students: students.data || [], sessions: sessions.data || [], assignments: assignments.data || [], progress: progress.data || [], summaries: summaries.data || [], requests: requests.data || [] })
   }
   useEffect(() => { void load() }, [])
   async function requestChange(event: FormEvent) {
@@ -64,7 +65,20 @@ export function ParentDashboard() {
     finally { setBusy(false) }
   }
   const eligibleSessions = data.sessions.filter((session: RecordItem) => session.status === 'scheduled' && new Date(session.starts_at).getTime() >= Date.now() + 3 * 24 * 60 * 60 * 1000 && !data.requests.some((request: RecordItem) => request.session_id === session.id && request.status === 'pending'))
-  return <Shell title={`Parent Dashboard${data.profile ? ` — ${data.profile.first_name}` : ''}`}>{error && <Notice>{error}</Notice>}{message && <Notice>{message}</Notice>}<div className="portal-grid"><List title="Students" items={data.students} render={student => <article key={student.id}><b>{student.first_name} {student.last_name}</b><span>{student.grade || 'Grade not listed'} · {student.current_course || 'Current subject not listed'}</span></article>} /><List title="Upcoming sessions" items={data.sessions} render={session => <article key={session.id}><b>{displaySessionTime(session.starts_at, session.ends_at)}</b><span>{session.students?.first_name} {session.students?.last_name} · {session.status}</span>{session.meeting_url && <a href={session.meeting_url} target="_blank" rel="noreferrer">Join online session</a>}</article>} /><List title="Assignments" items={data.assignments} render={assignment => <article key={assignment.id}><b>{assignment.title}</b><span>{assignment.students?.first_name} {assignment.students?.last_name} · {assignment.status}</span><small>{assignment.instructions || 'No additional instructions.'}</small></article>} /><List title="Progress updates" items={data.progress} render={entry => <article key={entry.id}><b>{entry.area}</b><span>{entry.students?.first_name} {entry.students?.last_name} · Mastery {entry.mastery_level || '—'}/5</span><small>{entry.notes || 'No notes provided.'}</small></article>} /></div><div className="session-tools"><ToolForm title="Request a cancellation or new time" onSubmit={requestChange} busy={busy}><p className="policy-note">Please submit requests at least three days before the scheduled lesson. Requests remain pending until reviewed.</p><label>Session<select required value={changeRequest.session_id} onChange={event => setChangeRequest({ ...changeRequest, session_id: event.target.value })}><option value="">Select an eligible session</option>{eligibleSessions.map((session: RecordItem) => <option key={session.id} value={session.id}>{session.students?.first_name} — {displayDate(session.starts_at)}</option>)}</select></label><label>Request type<select value={changeRequest.request_type} onChange={event => setChangeRequest({ ...changeRequest, request_type: event.target.value, requested_starts_at: '' })}><option value="reschedule">Request a new time</option><option value="cancel">Request cancellation</option></select></label>{changeRequest.request_type === 'reschedule' && <label>Requested date and time <small>Shown in {browserTimeZone}</small><input required type="datetime-local" value={changeRequest.requested_starts_at} onChange={event => setChangeRequest({ ...changeRequest, requested_starts_at: event.target.value })} /></label>}<label>Optional note<textarea value={changeRequest.reason} onChange={event => setChangeRequest({ ...changeRequest, reason: event.target.value })} /></label></ToolForm><List title="Change requests" items={data.requests} render={request => <article key={request.id}><b>{request.request_type === 'cancel' ? 'Cancellation request' : 'New-time request'}</b><span>{request.tutoring_sessions?.students?.first_name} · {request.status}</span><small>{request.requested_starts_at ? `Requested: ${displayDate(request.requested_starts_at)}` : `Session: ${displayDate(request.tutoring_sessions?.starts_at)}`}</small></article>} /></div></Shell>
+  return <Shell title={`Parent Dashboard${data.profile ? ` — ${data.profile.first_name}` : ''}`}>
+    {error && <Notice>{error}</Notice>}{message && <Notice>{message}</Notice>}
+    <div className="portal-grid">
+      <List title="Students" items={data.students} render={student => <article key={student.id}><b>{student.first_name} {student.last_name}</b><span>{student.grade || 'Grade not listed'} · {student.current_course || 'Current subject not listed'}</span></article>} />
+      <List title="Upcoming sessions" items={data.sessions} render={session => <article key={session.id}><b>{displaySessionTime(session.starts_at, session.ends_at)}</b><span>{session.students?.first_name} {session.students?.last_name} · {session.status}</span>{session.meeting_url && <a href={session.meeting_url} target="_blank" rel="noreferrer">Join online session</a>}</article>} />
+      <List title="Assignments" items={data.assignments} render={assignment => <article key={assignment.id}><b>{assignment.title}</b><span>{assignment.students?.first_name} {assignment.students?.last_name} · {assignment.status}</span><small>{assignment.instructions || 'No additional instructions.'}</small></article>} />
+      <List title="Progress updates" items={data.progress} render={entry => <article key={entry.id}><b>{entry.area}</b><span>{entry.students?.first_name} {entry.students?.last_name} · Mastery {entry.mastery_level || '—'}/5</span><small>{entry.notes || 'No notes provided.'}</small></article>} />
+      <List title="Tutor summaries" items={data.summaries} render={summary => <article key={summary.session_id}><b>{summary.tutoring_sessions?.students?.first_name} {summary.tutoring_sessions?.students?.last_name}</b><span>{displayDate(summary.tutoring_sessions?.starts_at)}</span><small>{summary.summary}</small></article>} />
+    </div>
+    <div className="session-tools">
+      <ToolForm title="Request a cancellation or new time" onSubmit={requestChange} busy={busy}><p className="policy-note">Please submit requests at least three days before the scheduled lesson. Requests remain pending until reviewed.</p><label>Session<select required value={changeRequest.session_id} onChange={event => setChangeRequest({ ...changeRequest, session_id: event.target.value })}><option value="">Select an eligible session</option>{eligibleSessions.map((session: RecordItem) => <option key={session.id} value={session.id}>{session.students?.first_name} — {displayDate(session.starts_at)}</option>)}</select></label><label>Request type<select value={changeRequest.request_type} onChange={event => setChangeRequest({ ...changeRequest, request_type: event.target.value, requested_starts_at: '' })}><option value="reschedule">Request a new time</option><option value="cancel">Request cancellation</option></select></label>{changeRequest.request_type === 'reschedule' && <label>Requested date and time <small>Shown in {browserTimeZone}</small><input required type="datetime-local" value={changeRequest.requested_starts_at} onChange={event => setChangeRequest({ ...changeRequest, requested_starts_at: event.target.value })} /></label>}<label>Optional note<textarea value={changeRequest.reason} onChange={event => setChangeRequest({ ...changeRequest, reason: event.target.value })} /></label></ToolForm>
+      <List title="Change requests" items={data.requests} render={request => <article key={request.id}><b>{request.request_type === 'cancel' ? 'Cancellation request' : 'New-time request'}</b><span>{request.tutoring_sessions?.students?.first_name} · {request.status}</span><small>{request.requested_starts_at ? `Requested: ${displayDate(request.requested_starts_at)}` : `Session: ${displayDate(request.tutoring_sessions?.starts_at)}`}</small></article>} />
+    </div>
+  </Shell>
 }
 
 export function StudentDashboard() {
@@ -121,12 +135,15 @@ export function TutorDashboard() {
       if (kind === 'session') payload = { ...payload, student_id: session.student_id, tutor_id: data.tutor.id }
     } else if (kind === 'assignment') payload = { ...assignment, tutor_id: data.tutor.id, due_at: assignment.due_at ? new Date(assignment.due_at).toISOString() : null }
     else if (kind === 'progress') { table = 'student_progress'; payload = { ...progress, tutor_id: data.tutor.id, mastery_level: Number(progress.mastery_level) } }
-    else { table = 'session_notes'; payload = { ...note, tutor_id: data.tutor.id, parent_summary: note.parent_summary || null } }
+    else { table = 'session_notes'; payload = note }
     let warning = ''
     try {
       if (kind === 'session' || kind === 'session_update') {
         const result = await portalRequest(kind === 'session' ? '/api/tutor/sessions' : `/api/tutor/sessions/${sessionEdit.id}`, kind === 'session' ? 'POST' : 'PATCH', { ...payload, mutation_id: crypto.randomUUID() })
         warning = result.warning || ''
+      } else if (kind === 'note') {
+        const saveResult = await supabase.rpc('save_tutoring_session_note', { note_session_id: note.session_id, private_content: note.content, family_summary: note.parent_summary || null })
+        if (saveResult.error) throw new Error('The session note could not be saved. Confirm the security hardening migration has been run and try again.')
       } else {
         const saveResult = await supabase.from(table).insert(payload)
         if (saveResult.error) throw new Error('The record could not be saved. Confirm the student is actively assigned to you and try again.')

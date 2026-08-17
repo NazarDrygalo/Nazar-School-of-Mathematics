@@ -34,3 +34,22 @@ test('workflow notifications are tracked, admin-readable, and idempotent', async
   assert.match(sql, /grant execute on function public\.resolve_session_change_request_server\(uuid, text, uuid\) to service_role/)
   assert.match(sql, /'notification_deliveries', deleted_notifications/)
 })
+
+test('security hardening separates family summaries from private tutor notes', async () => {
+  const sql = await migration('20260817_security_hardening.sql')
+  assert.match(sql, /create table if not exists public\.session_parent_summaries/)
+  assert.match(sql, /drop policy if exists "session participants read notes"/)
+  assert.match(sql, /parents read their session summaries/)
+  assert.match(sql, /save_tutoring_session_note/)
+  assert.match(sql, /revoke insert, update on public\.session_notes from authenticated/)
+})
+
+test('security hardening rate-limits applications and blocks direct workflow bypasses', async () => {
+  const sql = await migration('20260817_security_hardening.sql')
+  assert.match(sql, /application_submission_rate_limits/)
+  assert.match(sql, /claim_application_submission_rate_limit/)
+  assert.match(sql, /grant execute on function public\.claim_application_submission_rate_limit\(text, integer, integer\) to service_role/)
+  assert.match(sql, /revoke insert, update on public\.tutoring_sessions from authenticated/)
+  assert.match(sql, /revoke insert, update on public\.session_change_requests from authenticated/)
+  assert.match(sql, /revoke update on public\.applications from authenticated/)
+})
