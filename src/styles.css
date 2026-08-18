@@ -77,3 +77,13 @@
 .turnstile-wrap{width:100%;max-width:420px;margin-top:30px;min-height:65px}
 .turnstile-wrap>div{width:100%}
 .turnstile-error{border-left:3px solid #b42318;background:#fff4f3;color:#7a271a;padding:12px 14px;margin:28px 0 0}
+
+/* Secure portal account onboarding */
+.portal-invite-box{display:grid;gap:11px;background:#fff;border-left:3px solid #486581;padding:16px 18px;margin-top:6px}
+.portal-invite-option{display:flex!important;align-items:center;gap:9px!important;font-weight:600!important}
+.portal-invite-option input{width:18px;height:18px;margin:0;accent-color:#102a43}
+.portal-invite-box>label:not(.portal-invite-option){display:grid;gap:6px;color:#243b53;font-size:.86rem;font-weight:700}
+.portal-invite-box input[type="email"]{font:inherit;color:#102a43;border:1px solid #9fb3c8;background:#fff;padding:10px 11px;min-height:44px}
+.portal-invite-message{margin:0!important;border-left:3px solid #2f855a;background:#f0fff4;color:#22543d;padding:10px 12px;font-size:.88rem}
+.portal-invite-box small{color:#627d98;line-height:1.45}
+@media(max-width:600px){.portal-invite-box{padding:15px}.portal-invite-box .button{width:100%}.request-actions{flex-wrap:wrap}}

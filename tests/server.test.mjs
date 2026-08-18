@@ -99,6 +99,18 @@ test('workflow mutation endpoints reject unsupported methods', async () => {
   assert.equal(admin.status, 405)
 })
 
+test('portal invitation endpoints reject unsupported methods and require secure configuration', async () => {
+  const applicationId = '00000000-0000-4000-8000-000000000000'
+  const tutorId = '00000000-0000-4000-8000-000000000001'
+  const wrongFamilyMethod = await request({ url: `/api/admin/applications/${applicationId}/portal-invitations` })
+  const wrongTutorMethod = await request({ url: `/api/admin/tutors/${tutorId}/portal-invitation` })
+  const unconfigured = await request({ method: 'POST', url: `/api/admin/applications/${applicationId}/portal-invitations`, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ request_id: crypto.randomUUID(), roles: ['parent'] }) })
+  assert.equal(wrongFamilyMethod.status, 405)
+  assert.equal(wrongTutorMethod.status, 405)
+  assert.equal(unconfigured.status, 503)
+  assert.match(unconfigured.body.error, /not configured/i)
+})
+
 test('workflow mutation endpoints require secure server configuration', async () => {
   const response = await request({ method: 'POST', url: '/api/parent/session-change-requests', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ request_id: crypto.randomUUID(), session_id: crypto.randomUUID(), request_type: 'cancel' }) })
   assert.equal(response.status, 503)

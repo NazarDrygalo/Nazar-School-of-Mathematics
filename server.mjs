@@ -4,6 +4,7 @@ import { createReadStream, existsSync, readFileSync } from 'node:fs'
 import { extname, isAbsolute, join, normalize, relative } from 'node:path'
 import { createSupabaseAdminClient, isSupabaseConfigured } from './server/supabase.mjs'
 import { createSessionChangeRequest, resolveSessionChangeRequest, saveTutorSession } from './server/workflow-notifications.mjs'
+import { inviteAcceptedFamily, inviteTutor } from './server/portal-onboarding.mjs'
 
 // Local convenience only; hosted platforms should provide these through their environment.
 if (existsSync('.env')) {
@@ -275,6 +276,16 @@ async function workflowAction(req, res, action) {
 }
 
 export async function requestHandler(req, res) {
+  const familyInvitationMatch = req.url?.split('?')[0].match(/^\/api\/admin\/applications\/([0-9a-f-]+)\/portal-invitations$/i)
+  if (familyInvitationMatch) {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' })
+    return workflowAction(req, res, body => inviteAcceptedFamily(req, familyInvitationMatch[1], body))
+  }
+  const tutorInvitationMatch = req.url?.split('?')[0].match(/^\/api\/admin\/tutors\/([0-9a-f-]+)\/portal-invitation$/i)
+  if (tutorInvitationMatch) {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' })
+    return workflowAction(req, res, body => inviteTutor(req, tutorInvitationMatch[1], body))
+  }
   const tutorSessionMatch = req.url?.split('?')[0].match(/^\/api\/tutor\/sessions(?:\/([0-9a-f-]+))?$/i)
   if (tutorSessionMatch) {
     const sessionId = tutorSessionMatch[1] || null

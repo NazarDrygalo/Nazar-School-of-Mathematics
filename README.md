@@ -92,7 +92,9 @@ Run [`supabase/migrations/20260813_workflow_notifications.sql`](supabase/migrati
 
 Then run [`supabase/migrations/20260817_security_hardening.sql`](supabase/migrations/20260817_security_hardening.sql). It separates family-visible session summaries from private tutor notes, prevents browser clients from bypassing notification-producing server workflows, and adds persistent HMAC-based rate limiting for public applications. Deploy the matching application code immediately after running this migration because direct session and request mutations are intentionally revoked.
 
-Finally, run [`supabase/migrations/20260818_admin_mfa.sql`](supabase/migrations/20260818_admin_mfa.sql) and deploy the matching application code immediately afterward. This requires every administrator database query and server API call to use an MFA-authenticated `aal2` session. Parent, student, and tutor accounts continue to use their existing sign-in flow.
+Then run [`supabase/migrations/20260818_admin_mfa.sql`](supabase/migrations/20260818_admin_mfa.sql) and deploy the matching application code immediately afterward. This requires every administrator database query and server API call to use an MFA-authenticated `aal2` session. Parent, student, and tutor accounts continue to use their existing sign-in flow.
+
+Finally, run [`supabase/migrations/20260818170000_portal_onboarding.sql`](supabase/migrations/20260818170000_portal_onboarding.sql). It adds service-role-only, atomic Auth-user linking; idempotent invitation tracking; optional student email storage; administrator-only audit visibility; duplicate record/role protection; and seven-day cleanup of invitation activity. Apply this migration before deploying the matching onboarding UI because the dashboard reads `portal_invitations` immediately.
 
 In Supabase Authentication, confirm TOTP multi-factor verification is enabled. The next administrator sign-in displays a QR code and setup key; scan either one with an authenticator app and enter the current six-digit code. Later administrator sign-ins request a fresh six-digit code after the password. If the authenticator device is lost, recover the account through the Supabase administrator console only after verifying the account owner's identity, remove the lost factor, and enroll a new one at the next sign-in.
 
@@ -108,7 +110,7 @@ select cron.schedule(
 
 The example runs daily at 03:17 UTC. Confirm the job under Supabase Dashboard → Integrations → Cron. To test manually, run `select public.purge_expired_tutoring_data();` from the SQL Editor and review the returned deletion counts. Do not shorten the interval below one day.
 
-Create or invite each person in Supabase Authentication, then link their Auth UUID to the appropriate `parents`, `students`, or `tutors` record and add the matching `user_roles` row. The comments at the bottom of the migration include the exact SQL patterns. Only create portal accounts for accepted families and active tutors.
+Add `https://nazarschoolofmath.com/portal` to the Supabase Authentication allowed redirect URLs. The administrator portal creates secure one-time setup links only for accepted families and active tutors. The server creates or finds the Auth user, atomically links exactly one operational record and role, then sends the setup link through Resend. Existing users receive a password-reset link rather than a duplicate account.
 
 Parents can view their students, sessions, assignments, and progress. Students can view their own sessions, assignments, and progress. Administrators can activate an accepted student and assign one active tutor from the application detail panel. Tutors can then schedule sessions and create assignments and progress updates only for actively assigned students. Session times are saved as UTC instants and displayed in each viewer's local time zone.
 
@@ -120,18 +122,9 @@ Workflow email behavior:
 - Every delivery attempt is recorded in `notification_deliveries`; unique event keys prevent retries from producing duplicate messages.
 - The operational change remains saved if Resend fails, and the administrator dashboard displays the failure details.
 
-The onboarding panel intentionally does not create Auth accounts. After accepting a family, invite only the parent and/or student who should receive portal access, then link the Auth UUID and role:
+After accepting a family, activate the student and assign an active tutor. The accepted-family panel then lets the administrator send a parent setup email, an optional student setup email, or both. A student email is entered only when a separate student login is desired. Invitation attempts, errors, and successful linking are displayed in the dashboard and can be safely retried.
 
-```sql
-update public.parents set auth_user_id = 'PARENT_AUTH_UUID' where email = 'parent@example.com';
-update public.students set auth_user_id = 'STUDENT_AUTH_UUID' where id = 'STUDENT_RECORD_UUID';
-insert into public.user_roles (user_id, role) values ('PARENT_AUTH_UUID', 'parent')
-on conflict (user_id) do update set role = excluded.role;
-insert into public.user_roles (user_id, role) values ('STUDENT_AUTH_UUID', 'student')
-on conflict (user_id) do update set role = excluded.role;
-```
-
-For an active tutor, first create the `public.tutors` record if needed, invite the tutor in Supabase Authentication, link `tutors.auth_user_id`, and add a `tutor` row in `user_roles`. Do not create accounts for unaccepted applicants or inactive tutors.
+For tutors, create and activate the operational tutor record first, then use **Send setup email** in Tutor Administration. Inactive tutors are rejected by both the UI and server. Manual Auth UUID linking is retained only as an emergency recovery procedure; routine onboarding should use the administrator workflow so eligibility, role uniqueness, audit status, and email delivery are enforced together.
 
 Payments, invoicing, and external calendar integrations are intentionally not included yet; they need their own provider accounts, pricing, refund, and scheduling policies before they should be enabled.
 

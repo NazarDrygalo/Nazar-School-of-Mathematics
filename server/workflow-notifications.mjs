@@ -7,7 +7,7 @@ const clean = (value, max = 2000) => typeof value === 'string' ? value.trim().sl
 const escapeHtml = value => String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[character])
 const sessionTime = value => new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', dateStyle: 'long', timeStyle: 'short' }).format(new Date(value)) + ' Eastern Time'
 
-async function requireRole(req, expectedRole) {
+export async function requireRole(req, expectedRole) {
   if (!isSupabaseConfigured()) throw Object.assign(new Error('The secure workflow API is not configured.'), { status: 503 })
   const token = clean(req.headers.authorization, 10_000).match(/^Bearer\s+(.+)$/i)?.[1]
   if (!token) throw Object.assign(new Error('Portal sign-in is required.'), { status: 401 })

@@ -18,9 +18,10 @@ type Application = {
   preferred_times: string
   timezone: string
   parents: { id: string; auth_user_id: string | null; first_name: string; last_name: string; email: string; phone: string | null } | null
-  students: { id: string; auth_user_id: string | null; active: boolean; first_name: string; last_name: string; grade: string; school: string; current_course: string } | null
+  students: { id: string; auth_user_id: string | null; active: boolean; email: string | null; first_name: string; last_name: string; grade: string; school: string; current_course: string } | null
 }
 type Tutor = { id: string; first_name: string; last_name: string; email: string; active: boolean; auth_user_id: string | null }
+type PortalInvitation = { id: string; target_role: 'parent' | 'student' | 'tutor'; target_id: string; email: string; status: string; attempts: number; invitation_sent_at: string | null; linked_at: string | null; error: string | null }
 type TutorAssignment = { student_id: string; tutor_id: string; active: boolean }
 type SessionItem = { id: string; starts_at: string; ends_at: string; status: string; meeting_url: string | null; students: { first_name: string; last_name: string } | null; tutors: { first_name: string; last_name: string } | null }
 type ChangeRequest = { id: string; request_type: string; requested_starts_at: string | null; reason: string | null; status: string; created_at: string; tutoring_sessions: { starts_at: string; students: { first_name: string; last_name: string } | null; tutors: { first_name: string; last_name: string } | null } | null }
@@ -55,7 +56,7 @@ export function PortalLogin() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
-  const [mode, setMode] = useState<'signin' | 'reset-request' | 'update-password' | 'mfa-enroll' | 'mfa-challenge'>(() => location.hash.includes('type=recovery') ? 'update-password' : 'signin')
+  const [mode, setMode] = useState<'signin' | 'reset-request' | 'update-password' | 'mfa-enroll' | 'mfa-challenge'>(() => /type=(recovery|invite)/.test(location.hash) ? 'update-password' : 'signin')
   const [mfaCode, setMfaCode] = useState('')
   const [mfaFactorId, setMfaFactorId] = useState('')
   const [mfaQrCode, setMfaQrCode] = useState('')
@@ -157,6 +158,7 @@ export function AdminDashboard() {
   const [sessions, setSessions] = useState<SessionItem[]>([])
   const [changeRequests, setChangeRequests] = useState<ChangeRequest[]>([])
   const [notificationDeliveries, setNotificationDeliveries] = useState<NotificationDelivery[]>([])
+  const [portalInvitations, setPortalInvitations] = useState<PortalInvitation[]>([])
   const [status, setStatus] = useState<'loading' | 'ready' | 'unauthorized' | 'error'>('loading')
   const [message, setMessage] = useState('')
   const [selected, setSelected] = useState<Application | null>(null)
@@ -172,15 +174,16 @@ export function AdminDashboard() {
     if (role?.role !== 'admin') { await supabase.auth.signOut(); setStatus('unauthorized'); return }
     const { data: assurance, error: assuranceError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
     if (assuranceError || assurance.currentLevel !== 'aal2') { navigateTo('portal', true); return }
-    const [applicationResult, tutorResult, assignmentResult, sessionResult, requestResult, deliveryResult] = await Promise.all([
-      supabase.from('applications').select('id, created_at, status, notification_status, notification_error, accepted_email_status, accepted_email_sent_at, accepted_email_error, service_area, help_areas, academic_goals, preferred_days, preferred_times, timezone, parents(id,auth_user_id,first_name,last_name,email,phone), students(id,auth_user_id,active,first_name,last_name,grade,school,current_course)').order('created_at', { ascending: false }),
+    const [applicationResult, tutorResult, assignmentResult, sessionResult, requestResult, deliveryResult, invitationResult] = await Promise.all([
+      supabase.from('applications').select('id, created_at, status, notification_status, notification_error, accepted_email_status, accepted_email_sent_at, accepted_email_error, service_area, help_areas, academic_goals, preferred_days, preferred_times, timezone, parents(id,auth_user_id,first_name,last_name,email,phone), students(id,auth_user_id,active,email,first_name,last_name,grade,school,current_course)').order('created_at', { ascending: false }),
       supabase.from('tutors').select('id,first_name,last_name,email,active,auth_user_id').order('first_name'),
       supabase.from('student_tutor_assignments').select('student_id,tutor_id,active'),
       supabase.from('tutoring_sessions').select('id,starts_at,ends_at,status,meeting_url,students(first_name,last_name),tutors(first_name,last_name)').order('starts_at'),
       supabase.from('session_change_requests').select('id,request_type,requested_starts_at,reason,status,created_at,tutoring_sessions(starts_at,students(first_name,last_name),tutors(first_name,last_name))').order('created_at', { ascending: false }),
-      supabase.from('notification_deliveries').select('id,event_type,recipient_role,recipient_email,status,attempted_at,sent_at,error').eq('status', 'failed').order('attempted_at', { ascending: false })
+      supabase.from('notification_deliveries').select('id,event_type,recipient_role,recipient_email,status,attempted_at,sent_at,error').eq('status', 'failed').order('attempted_at', { ascending: false }),
+      supabase.from('portal_invitations').select('id,target_role,target_id,email,status,attempts,invitation_sent_at,linked_at,error').order('updated_at', { ascending: false })
     ])
-    const failed = [applicationResult, tutorResult, assignmentResult, sessionResult, requestResult, deliveryResult].find(result => result.error)
+    const failed = [applicationResult, tutorResult, assignmentResult, sessionResult, requestResult, deliveryResult, invitationResult].find(result => result.error)
     if (failed?.error) { setStatus('error'); setMessage('Portal data could not be loaded. Confirm every migration in README.md has been run in order.'); return }
     const nextApplications = (applicationResult.data || []) as unknown as Application[]
     setApplications(nextApplications)
@@ -189,6 +192,7 @@ export function AdminDashboard() {
     setSessions((sessionResult.data || []) as unknown as SessionItem[])
     setChangeRequests((requestResult.data || []) as unknown as ChangeRequest[])
     setNotificationDeliveries((deliveryResult.data || []) as NotificationDelivery[])
+    setPortalInvitations((invitationResult.data || []) as PortalInvitation[])
     if (selectedId) setSelected(nextApplications.find(item => item.id === selectedId) || null)
     setStatus('ready')
   }
@@ -217,7 +221,7 @@ export function AdminDashboard() {
     setBusy(false)
     if (assignmentError) { setMessage('The tutor assignment could not be saved.'); return }
     await load(application.id)
-    setMessage('Student activated and tutor assignment saved. Portal Auth accounts were not created.')
+    setMessage('Student activated and tutor assignment saved. Portal invitations can now be sent below.')
   }
 
   async function resolveChangeRequest(requestId: string, resolution: 'approved' | 'declined') {
@@ -257,7 +261,8 @@ export function AdminDashboard() {
   const pendingRequests = changeRequests.filter(request => request.status === 'pending').length
   const applicationDeliveryIssues = applications.filter(hasDeliveryIssue).length
   const workflowDeliveryIssues = notificationDeliveries.filter(delivery => delivery.status === 'failed').length
-  const deliveryIssues = applicationDeliveryIssues + workflowDeliveryIssues
+  const invitationDeliveryIssues = portalInvitations.filter(invitation => invitation.status === 'failed').length
+  const deliveryIssues = applicationDeliveryIssues + workflowDeliveryIssues + invitationDeliveryIssues
   const onboardingNeeded = applications.filter(application => needsOnboarding(application, assignments)).length
   const unlinkedFamilies = applications.filter(lacksPortalAccess).length
   const reviewNeeded = applications.filter(application => ['submitted', 'reviewing'].includes(application.status)).length
@@ -293,11 +298,57 @@ function NotificationDeliveryPanel({ deliveries }: { deliveries: NotificationDel
 
 function ApplicationDetail({ application, tutors, assignments, busy, onStatus, onOnboard }: { application: Application | null; tutors: Tutor[]; assignments: TutorAssignment[]; busy: boolean; onStatus: (application: Application, nextStatus: string) => Promise<void>; onOnboard: (application: Application, tutorId: string) => Promise<void> }) {
   const [tutorId, setTutorId] = useState('')
+  const [inviteParent, setInviteParent] = useState(() => Boolean(application?.parents && !application.parents.auth_user_id))
+  const [inviteStudent, setInviteStudent] = useState(() => Boolean(application?.parents?.auth_user_id && application?.students && !application.students.auth_user_id))
+  const [studentEmail, setStudentEmail] = useState(application?.students?.email || '')
+  const [invitations, setInvitations] = useState<PortalInvitation[]>([])
+  const [inviting, setInviting] = useState(false)
+  const [inviteMessage, setInviteMessage] = useState('')
+
+  async function loadInvitations() {
+    if (!supabase || !application?.parents || !application.students) return
+    const { data } = await supabase.from('portal_invitations').select('id,target_role,target_id,email,status,attempts,invitation_sent_at,linked_at,error').in('target_id', [application.parents.id, application.students.id])
+    setInvitations((data || []) as PortalInvitation[])
+  }
+  useEffect(() => { void loadInvitations() }, [application?.id])
+
   if (!application) return <aside className="application-detail empty-state">Select an application to view its details.</aside>
   const student = application.students; const parent = application.parents
   const currentAssignment = assignments.find(item => item.student_id === student?.id && item.active)
   const currentTutor = tutors.find(tutor => tutor.id === currentAssignment?.tutor_id)
-  return <aside className="application-detail"><div className="detail-top"><div><p className="eyebrow">Application detail</p><h2>{student?.first_name} {student?.last_name}</h2></div><label>Application status<select disabled={busy} value={application.status} onChange={event => void onStatus(application, event.target.value)}>{['submitted','reviewing','accepted','declined','withdrawn'].map(value => <option key={value} value={value}>{value}</option>)}</select></label></div><div className="detail-grid"><Detail label="Tutoring area">{application.service_area}</Detail><Detail label="Student">{student?.grade}<br />{student?.school}<br />{student?.current_course}</Detail><Detail label="Parent / guardian">{parent?.first_name} {parent?.last_name}<br /><a href={`mailto:${parent?.email}`}>{parent?.email}</a><br />{parent?.phone || 'No phone provided'}</Detail><Detail label="Areas needing help">{application.help_areas}</Detail><Detail label="Academic goals">{application.academic_goals}</Detail><Detail label="Availability">{application.preferred_days}<br />{application.preferred_times}<br />{application.timezone}</Detail></div><section className="delivery-panel"><h3>Delivery and account status</h3><div className="delivery-grid"><StatusLine label="School notification" state={application.notification_status} detail={application.notification_error} /><StatusLine label="Acceptance email" state={application.accepted_email_sent_at ? 'sent' : application.accepted_email_status} detail={application.accepted_email_sent_at ? `Sent ${new Date(application.accepted_email_sent_at).toLocaleString()}` : application.accepted_email_error} /><StatusLine label="Parent portal" state={parent?.auth_user_id ? 'linked' : 'not linked'} /><StatusLine label="Student portal" state={student?.auth_user_id ? 'linked' : 'not linked'} /></div></section>{application.status === 'accepted' && <section className="onboarding-panel"><h3>Accepted-family onboarding</h3><p>Activating a student and assigning a tutor makes the student available in that tutor’s scheduling tools. It does not create an Auth account.</p><div className="onboarding-checks"><StatusLine label="Student record" state={student?.active ? 'active' : 'not active'} /><StatusLine label="Tutor assignment" state={currentTutor ? `${currentTutor.first_name} ${currentTutor.last_name}` : 'not assigned'} /></div><label htmlFor="onboarding-tutor">Assigned tutor</label><select id="onboarding-tutor" value={tutorId || currentAssignment?.tutor_id || ''} onChange={event => setTutorId(event.target.value)}><option value="">Select an active tutor</option>{tutors.map(tutor => <option key={tutor.id} value={tutor.id}>{tutor.first_name} {tutor.last_name}</option>)}</select><button className="button" disabled={busy || !(tutorId || currentAssignment?.tutor_id)} onClick={() => void onOnboard(application, tutorId || currentAssignment?.tutor_id || '')}>{busy ? 'Saving…' : 'Activate and assign tutor'}</button><div className="manual-steps"><b>Portal account checklist</b><ol><li>Invite only the accepted parent and/or student from Supabase Authentication.</li><li>Link the Auth UUID to the parent or student record.</li><li>Add the matching <code>user_roles</code> row using the SQL pattern in README.md.</li></ol><small>A student login is optional when only the parent needs portal access.</small></div></section>}</aside>
+  const parentInvitation = invitations.find(item => item.target_role === 'parent' && item.target_id === parent?.id)
+  const studentInvitation = invitations.find(item => item.target_role === 'student' && item.target_id === student?.id)
+  const parentLinked = Boolean(parent?.auth_user_id || parentInvitation?.status === 'linked')
+  const studentLinked = Boolean(student?.auth_user_id || studentInvitation?.status === 'linked')
+  const onboardingReady = Boolean(student?.active && currentAssignment)
+
+  async function sendInvitations() {
+    if (!supabase || !application || inviting) return
+    const roles: Array<'parent' | 'student'> = []
+    if (inviteParent && !parentLinked) roles.push('parent')
+    if (inviteStudent && !studentLinked) roles.push('student')
+    if (!roles.length) { setInviteMessage('Select at least one unlinked portal account.'); return }
+    if (roles.includes('student') && !/^\S+@\S+\.\S+$/.test(studentEmail.trim())) { setInviteMessage('Enter a valid student email address.'); return }
+    const destinations = roles.map(role => role === 'parent' ? parent?.email : studentEmail.trim()).join(' and ')
+    if (!window.confirm(`Send secure portal account setup ${roles.length === 1 ? 'email' : 'emails'} to ${destinations}?`)) return
+    setInviting(true); setInviteMessage('')
+    const { data: session } = await supabase.auth.getSession()
+    if (!session.session) { setInviting(false); setInviteMessage('Your administrator session expired. Sign in again.'); return }
+    try {
+      const response = await fetch(`/api/admin/applications/${application.id}/portal-invitations`, { method: 'POST', headers: { Authorization: `Bearer ${session.session.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ request_id: crypto.randomUUID(), roles, student_email: studentEmail.trim().toLowerCase() || null }) })
+      const result = await response.json().catch(() => ({ error: `The server returned an invalid response (HTTP ${response.status}).` }))
+      await loadInvitations()
+      setInviteMessage(response.ok ? 'Portal access was linked and the secure account-setup email was sent.' : result.error || 'Portal invitations could not be sent.')
+    } catch { setInviteMessage('The invitation request could not reach the server. Please try again.') }
+    finally { setInviting(false) }
+  }
+
+  return <aside className="application-detail">
+    <div className="detail-top"><div><p className="eyebrow">Application detail</p><h2>{student?.first_name} {student?.last_name}</h2></div><label>Application status<select disabled={busy} value={application.status} onChange={event => void onStatus(application, event.target.value)}>{['submitted','reviewing','accepted','declined','withdrawn'].map(value => <option key={value} value={value}>{value}</option>)}</select></label></div>
+    <div className="detail-grid"><Detail label="Tutoring area">{application.service_area}</Detail><Detail label="Student">{student?.grade}<br />{student?.school}<br />{student?.current_course}</Detail><Detail label="Parent / guardian">{parent?.first_name} {parent?.last_name}<br /><a href={`mailto:${parent?.email}`}>{parent?.email}</a><br />{parent?.phone || 'No phone provided'}</Detail><Detail label="Areas needing help">{application.help_areas}</Detail><Detail label="Academic goals">{application.academic_goals}</Detail><Detail label="Availability">{application.preferred_days}<br />{application.preferred_times}<br />{application.timezone}</Detail></div>
+    <section className="delivery-panel"><h3>Delivery and account status</h3><div className="delivery-grid"><StatusLine label="School notification" state={application.notification_status} detail={application.notification_error} /><StatusLine label="Acceptance email" state={application.accepted_email_sent_at ? 'sent' : application.accepted_email_status} detail={application.accepted_email_sent_at ? `Sent ${new Date(application.accepted_email_sent_at).toLocaleString()}` : application.accepted_email_error} /><StatusLine label="Parent portal" state={parentLinked ? 'linked' : parentInvitation?.status || 'not linked'} detail={parentInvitation?.error} /><StatusLine label="Student portal" state={studentLinked ? 'linked' : studentInvitation?.status || 'not linked'} detail={studentInvitation?.error} /></div></section>
+    {application.status === 'accepted' && <section className="onboarding-panel"><h3>Accepted-family onboarding</h3><p>First activate the student and assign an active tutor. Then send secure account-setup links for the parent, student, or both.</p><div className="onboarding-checks"><StatusLine label="Student record" state={student?.active ? 'active' : 'not active'} /><StatusLine label="Tutor assignment" state={currentTutor ? `${currentTutor.first_name} ${currentTutor.last_name}` : 'not assigned'} /></div><label htmlFor="onboarding-tutor">Assigned tutor</label><select id="onboarding-tutor" value={tutorId || currentAssignment?.tutor_id || ''} onChange={event => setTutorId(event.target.value)}><option value="">Select an active tutor</option>{tutors.map(tutor => <option key={tutor.id} value={tutor.id}>{tutor.first_name} {tutor.last_name}</option>)}</select><button className="button" disabled={busy || !(tutorId || currentAssignment?.tutor_id)} onClick={() => void onOnboard(application, tutorId || currentAssignment?.tutor_id || '')}>{busy ? 'Saving…' : 'Activate and assign tutor'}</button><div className="portal-invite-box"><b>Portal accounts</b><label className="portal-invite-option"><input type="checkbox" checked={inviteParent && !parentLinked} disabled={parentLinked} onChange={event => setInviteParent(event.target.checked)} />Parent · {parent?.email}</label><label className="portal-invite-option"><input type="checkbox" checked={inviteStudent && !studentLinked} disabled={studentLinked} onChange={event => setInviteStudent(event.target.checked)} />Student account</label>{inviteStudent && !studentLinked && <label htmlFor="student-portal-email">Student email address<input id="student-portal-email" type="email" autoComplete="off" value={studentEmail} onChange={event => setStudentEmail(event.target.value)} /></label>}<button className="button" disabled={busy || inviting || !onboardingReady || ((!inviteParent || parentLinked) && (!inviteStudent || studentLinked))} onClick={() => void sendInvitations()}>{inviting ? 'Sending…' : invitations.some(item => item.status === 'failed') ? 'Retry portal setup email' : 'Send portal setup email'}</button>{!onboardingReady && <small>Activate the student and assign a tutor before sending invitations.</small>}{inviteMessage && <p className="portal-invite-message" role="status">{inviteMessage}</p>}<small>Existing Auth users are linked only when their email and role are eligible; they receive a password-reset link instead of a duplicate account.</small></div></section>}
+  </aside>
 }
 function Detail({ label, children }: { label: string; children: ReactNode }) { return <div><b>{label}</b><p>{children}</p></div> }
 function StatusLine({ label, state, detail }: { label: string; state: string; detail?: string | null }) {
@@ -312,5 +363,28 @@ function SessionAdministration({ sessions, requests, busy, onResolve }: { sessio
 }
 
 function TutorAdministration({ tutors, newTutor, setNewTutor, busy, onCreate, onSetActive }: { tutors: Tutor[]; newTutor: { first_name: string; last_name: string; email: string }; setNewTutor: (value: { first_name: string; last_name: string; email: string }) => void; busy: boolean; onCreate: (event: FormEvent) => Promise<void>; onSetActive: (tutor: Tutor, active: boolean) => Promise<void> }) {
-  return <section className="admin-sessions"><div className="section-title"><p className="eyebrow">Tutor administration</p><h2>Operational tutor records</h2><p>Create records only for active tutors. Supabase Auth invitations and UUID linking remain separate, deliberate steps.</p></div><div className="session-tools"><form className="portal-panel tool-form" onSubmit={event => void onCreate(event)}><h3>Add an active tutor</h3><label>First name<input required value={newTutor.first_name} onChange={event => setNewTutor({ ...newTutor, first_name: event.target.value })} /></label><label>Last name<input required value={newTutor.last_name} onChange={event => setNewTutor({ ...newTutor, last_name: event.target.value })} /></label><label>Email address<input required type="email" value={newTutor.email} onChange={event => setNewTutor({ ...newTutor, email: event.target.value })} /></label><button className="button" disabled={busy}>{busy ? 'Saving…' : 'Create tutor record'}</button></form><section className="portal-panel"><h3>Existing tutors</h3><div className="portal-list">{tutors.length ? tutors.map(tutor => <article key={tutor.id}><b>{tutor.first_name} {tutor.last_name}</b><span>{tutor.email}</span><small>{tutor.active ? 'Active' : 'Inactive'} · Auth {tutor.auth_user_id ? 'linked' : 'not linked'}</small><span className="request-actions"><button disabled={busy || tutor.active} onClick={() => void onSetActive(tutor, true)}>Activate</button><button disabled={busy || !tutor.active} onClick={() => void onSetActive(tutor, false)}>Deactivate</button></span></article>) : <p className="empty-state">No tutors have been created.</p>}</div></section></div></section>
+  const [invitations, setInvitations] = useState<PortalInvitation[]>([])
+  const [invitingTutorId, setInvitingTutorId] = useState('')
+  const [inviteMessage, setInviteMessage] = useState('')
+  async function loadTutorInvitations() {
+    if (!supabase) return
+    const { data } = await supabase.from('portal_invitations').select('id,target_role,target_id,email,status,attempts,invitation_sent_at,linked_at,error').eq('target_role', 'tutor')
+    setInvitations((data || []) as PortalInvitation[])
+  }
+  useEffect(() => { void loadTutorInvitations() }, [tutors.length])
+  async function sendTutorInvite(tutor: Tutor) {
+    if (!supabase || busy || invitingTutorId) return
+    if (!window.confirm(`Send a secure tutor portal account setup email to ${tutor.email}?`)) return
+    setInvitingTutorId(tutor.id); setInviteMessage('')
+    const { data: session } = await supabase.auth.getSession()
+    if (!session.session) { setInvitingTutorId(''); setInviteMessage('Your administrator session expired. Sign in again.'); return }
+    try {
+      const response = await fetch(`/api/admin/tutors/${tutor.id}/portal-invitation`, { method: 'POST', headers: { Authorization: `Bearer ${session.session.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ request_id: crypto.randomUUID() }) })
+      const result = await response.json().catch(() => ({ error: `The server returned an invalid response (HTTP ${response.status}).` }))
+      await loadTutorInvitations()
+      setInviteMessage(response.ok ? `Portal access for ${tutor.first_name} was linked and the secure setup email was sent.` : result.error || 'The tutor portal invitation could not be sent.')
+    } catch { setInviteMessage('The tutor invitation request could not reach the server. Please try again.') }
+    finally { setInvitingTutorId('') }
+  }
+  return <section className="admin-sessions"><div className="section-title"><p className="eyebrow">Tutor administration</p><h2>Operational tutor records</h2><p>Create records only for active tutors, then send their secure portal setup email from the tutor list.</p></div>{inviteMessage && <p className="dashboard-message" role="status">{inviteMessage}</p>}<div className="session-tools"><form className="portal-panel tool-form" onSubmit={event => void onCreate(event)}><h3>Add an active tutor</h3><label>First name<input required value={newTutor.first_name} onChange={event => setNewTutor({ ...newTutor, first_name: event.target.value })} /></label><label>Last name<input required value={newTutor.last_name} onChange={event => setNewTutor({ ...newTutor, last_name: event.target.value })} /></label><label>Email address<input required type="email" value={newTutor.email} onChange={event => setNewTutor({ ...newTutor, email: event.target.value })} /></label><button className="button" disabled={busy}>{busy ? 'Saving…' : 'Create tutor record'}</button></form><section className="portal-panel"><h3>Existing tutors</h3><div className="portal-list">{tutors.length ? tutors.map(tutor => { const invitation = invitations.find(item => item.target_id === tutor.id); const linked = Boolean(tutor.auth_user_id || invitation?.status === 'linked'); return <article key={tutor.id}><b>{tutor.first_name} {tutor.last_name}</b><span>{tutor.email}</span><small>{tutor.active ? 'Active' : 'Inactive'} · Auth {linked ? 'linked' : invitation?.status || 'not linked'}{invitation?.attempts ? ` · ${invitation.attempts} attempt${invitation.attempts === 1 ? '' : 's'}` : ''}</small>{invitation?.error && <small className="row-alert">{invitation.error}</small>}<span className="request-actions"><button disabled={busy || tutor.active} onClick={() => void onSetActive(tutor, true)}>Activate</button><button disabled={busy || !tutor.active} onClick={() => void onSetActive(tutor, false)}>Deactivate</button><button disabled={busy || !tutor.active || Boolean(invitingTutorId)} onClick={() => void sendTutorInvite(tutor)}>{invitingTutorId === tutor.id ? 'Sending…' : linked ? 'Send password reset' : invitation?.status === 'failed' ? 'Retry setup email' : 'Send setup email'}</button></span></article> }) : <p className="empty-state">No tutors have been created.</p>}</div></section></div></section>
 }

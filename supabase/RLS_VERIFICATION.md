@@ -70,3 +70,24 @@ rollback;
 ```
 
 Repeat the administrator function call as a parent or tutor and confirm it fails with `Administrator access is required.` Never use production family records for RLS tests.
+
+## Portal invitation isolation
+
+```sql
+begin;
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  json_build_object('sub', 'ADMIN_AUTH_UUID', 'role', 'authenticated', 'aal', 'aal2')::text,
+  true
+);
+
+select * from public.portal_invitations; -- Must be readable by the MFA-authenticated administrator.
+
+-- Both must fail: invitation claims and Auth linking are server-only actions.
+select public.claim_portal_invitation('parent', 'PARENT_RECORD_UUID', 'parent@example.com', gen_random_uuid(), 'ADMIN_AUTH_UUID');
+select public.link_portal_auth_user('parent', 'PARENT_RECORD_UUID', 'PARENT_AUTH_UUID', null);
+rollback;
+```
+
+Repeat the `portal_invitations` query with an `aal1` administrator JWT and with parent, student, and tutor JWTs. Each query must return no rows or fail, and direct inserts or updates must be denied.

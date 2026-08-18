@@ -55,21 +55,22 @@ After accepting the application, the administrator:
 
 This action activates the student and creates an active tutor/student assignment. Only one tutor assignment may be active for a student at a time.
 
-This action deliberately does not create Authentication users or send account invitations.
+Account invitations remain unavailable until this activation and assignment step succeeds.
 
-### Step 4: Portal accounts are created deliberately
+### Step 4: Portal accounts are created securely
 
 Only accepted families and active tutors should receive portal accounts.
 
-For each person who needs access:
+For each accepted family:
 
-1. Create or invite the person under **Supabase Authentication -> Users**.
-2. Link the resulting Auth UUID to the correct `parents`, `students`, or `tutors` record.
-3. Add the matching `parent`, `student`, or `tutor` row to `public.user_roles`.
+1. Select the parent account, optional student account, or both in the accepted-family panel.
+2. Enter the student's email only when a separate student login is required.
+3. Confirm the exact recipients and choose **Send portal setup email**.
+4. Review the linked, pending, or failed status shown in the panel.
 
 Parents and students must use different Authentication accounts. A student account is optional when only the parent needs portal access.
 
-The exact linking patterns are documented in `README.md`. After linking, verify that the operational record has an `auth_user_id` and that the same UUID has the correct `user_roles` entry.
+The server creates a one-time Supabase setup link, atomically links the Auth UUID and role, and sends the link through Resend. Existing Auth users receive a password-reset link instead of a duplicate account. Retries reuse the same invitation audit record, and the database rejects users already linked to another record or role.
 
 ### Step 5: The user signs in
 
@@ -100,7 +101,7 @@ The administrator can:
 - Review parent cancellation and rescheduling requests.
 - Approve or decline session-change requests.
 
-Creating a tutor operational record does not create the tutor's Auth account. Authentication setup remains a separate step.
+Creating a tutor operational record does not immediately create the tutor's Auth account. After confirming the record is active, use **Send setup email** in Tutor Administration. Inactive tutors cannot be invited.
 
 ### Parent
 
@@ -156,7 +157,7 @@ Parents must submit cancellation or rescheduling requests at least three days be
 
 ## 5. Authentication and password recovery
 
-Supabase Authentication manages email/password sign-in and password recovery.
+Supabase Authentication manages email/password sign-in, initial account setup, and password recovery. Portal setup links return to `/portal`; recovery links return to the approved site URL.
 
 If a user forgets a password:
 
@@ -166,7 +167,7 @@ If a user forgets a password:
 4. The user chooses a new password of at least 10 characters.
 5. The user is signed out and signs in again with the new password.
 
-Production and local recovery URLs must be listed in the Supabase Authentication redirect settings before recovery is tested.
+Production and local recovery URLs, including `https://nazarschoolofmath.com/portal`, must be listed in the Supabase Authentication redirect settings before onboarding and recovery are tested.
 
 ## 6. Security model
 
@@ -213,6 +214,7 @@ The `public.purge_expired_tutoring_data()` function removes eligible records old
 - Historical session notes.
 - Session-change requests.
 - Workflow email-delivery records.
+- Portal invitation attempts and delivery errors.
 - Progress entries.
 - Assignments.
 - Ended sessions and old cancelled sessions.
@@ -248,7 +250,7 @@ The minimum workflow smoke test is:
 2. Confirm the school notification and parent receipt.
 3. Accept the application and confirm one acceptance email.
 4. Activate the student and assign an active tutor.
-5. Link disposable parent, student, and tutor Auth accounts.
+5. Send disposable parent, student, and tutor setup emails from the administrator portal and complete each password setup.
 6. Schedule and edit a future session as the tutor.
 7. Confirm the parent and student can see the correct session.
 8. Submit a valid parent rescheduling request.
@@ -291,6 +293,6 @@ RATE_LIMIT_SECRET=...
 
 ## 12. Current scope
 
-The platform currently supports applications, role-based portals, tutor assignments, scheduling, assignments, progress tracking, session notes, family change requests, password recovery, email delivery, and automated data retention.
+The platform currently supports applications, automated portal account onboarding, role-based portals, tutor assignments, scheduling, assignments, progress tracking, session notes, family change requests, password recovery, email delivery, and automated data retention.
 
 Payments, invoicing, and external calendar integrations are intentionally outside the current scope. They should be added only after the relevant providers, pricing, refund rules, and scheduling policies have been formally selected.

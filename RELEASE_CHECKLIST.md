@@ -12,6 +12,7 @@ Existing projects that already have the first five migrations should run the rem
 4. [`supabase/migrations/20260813_workflow_notifications.sql`](supabase/migrations/20260813_workflow_notifications.sql)
 5. [`supabase/migrations/20260817_security_hardening.sql`](supabase/migrations/20260817_security_hardening.sql)
 6. [`supabase/migrations/20260818_admin_mfa.sql`](supabase/migrations/20260818_admin_mfa.sql)
+7. [`supabase/migrations/20260818170000_portal_onboarding.sql`](supabase/migrations/20260818170000_portal_onboarding.sql)
 
 For a new Supabase project, run the complete order:
 
@@ -26,6 +27,7 @@ For a new Supabase project, run the complete order:
 9. `20260813_workflow_notifications.sql`
 10. `20260817_security_hardening.sql`
 11. `20260818_admin_mfa.sql`
+12. `20260818170000_portal_onboarding.sql`
 
 Afterward, run the checks in `supabase/RLS_VERIFICATION.md` with disposable test records.
 
@@ -37,11 +39,12 @@ Enable Supabase Cron and create the daily job documented in `README.md`. Run `se
 
 - Confirm the production Site URL is `https://nazarschoolofmath.com`.
 - Add `https://nazarschoolofmath.com/` to allowed redirect URLs for password recovery.
+- Add `https://nazarschoolofmath.com/portal` to allowed redirect URLs for portal setup invitations.
 - Add `http://localhost:3000/` only when local password-recovery testing is needed.
 - Confirm Nazar's Auth UUID has the `admin` role.
 - Confirm TOTP multi-factor verification is enabled, enroll the administrator account, sign out, and confirm the next sign-in requires a six-digit authenticator code.
 - Confirm an administrator password-only (`aal1`) session cannot read administrator data or call an administrator server endpoint.
-- Create Auth users only for accepted families and active tutors.
+- Use the administrator portal to create Auth users only for accepted families and active tutors.
 - Confirm every Auth UUID is linked to exactly one appropriate parent, student, or tutor record and has the matching `user_roles` row.
 
 ## 4. Render environment
@@ -80,6 +83,9 @@ Check desktop and mobile layouts at minimum on Home, Resources, Apply, Portal Lo
 - Accept it and confirm exactly one acceptance email is delivered.
 - Create or activate a tutor record; confirm this does not send an invitation.
 - Activate the accepted student and assign the tutor.
+- Send parent and student portal setup emails from the accepted-family panel; confirm each recipient can create a password and reaches only the correct portal.
+- Retry one setup email and confirm the existing Auth user is linked instead of duplicated.
+- Send an active tutor's setup email from Tutor Administration and confirm an inactive tutor cannot be invited.
 - Schedule and edit a session as the tutor.
 - Confirm the session appears with correct local time for parent and student.
 - Submit a parent rescheduling request more than three days before the lesson.
