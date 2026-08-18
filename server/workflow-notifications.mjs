@@ -17,6 +17,11 @@ async function requireRole(req, expectedRole) {
   const { data: role, error: roleError } = await supabase.from('user_roles').select('role').eq('user_id', authData.user.id).maybeSingle()
   if (roleError) throw Object.assign(new Error('Your portal role could not be verified.'), { status: 503 })
   if (role?.role !== expectedRole) throw Object.assign(new Error(`${expectedRole[0].toUpperCase() + expectedRole.slice(1)} access is required.`), { status: 403 })
+  if (expectedRole === 'admin') {
+    const { data: assurance, error: assuranceError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel(token)
+    if (assuranceError) throw Object.assign(new Error('Multi-factor authentication could not be verified.'), { status: 503 })
+    if (assurance.currentLevel !== 'aal2') throw Object.assign(new Error('Administrator multi-factor authentication is required.'), { status: 403 })
+  }
   return { supabase, user: authData.user }
 }
 

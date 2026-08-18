@@ -77,6 +77,10 @@ Run [`supabase/migrations/20260813_workflow_notifications.sql`](supabase/migrati
 
 Then run [`supabase/migrations/20260817_security_hardening.sql`](supabase/migrations/20260817_security_hardening.sql). It separates family-visible session summaries from private tutor notes, prevents browser clients from bypassing notification-producing server workflows, and adds persistent HMAC-based rate limiting for public applications. Deploy the matching application code immediately after running this migration because direct session and request mutations are intentionally revoked.
 
+Finally, run [`supabase/migrations/20260818_admin_mfa.sql`](supabase/migrations/20260818_admin_mfa.sql) and deploy the matching application code immediately afterward. This requires every administrator database query and server API call to use an MFA-authenticated `aal2` session. Parent, student, and tutor accounts continue to use their existing sign-in flow.
+
+In Supabase Authentication, confirm TOTP multi-factor verification is enabled. The next administrator sign-in displays a QR code and setup key; scan either one with an authenticator app and enter the current six-digit code. Later administrator sign-ins request a fresh six-digit code after the password. If the authenticator device is lost, recover the account through the Supabase administrator console only after verifying the account owner's identity, remove the lost factor, and enroll a new one at the next sign-in.
+
 To enforce the policy automatically, enable Supabase Cron in the dashboard and schedule the cleanup once per day from the SQL Editor:
 
 ```sql

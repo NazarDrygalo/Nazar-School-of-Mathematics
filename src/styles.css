@@ -64,3 +64,11 @@
 .delivery-issues-panel{border-top:3px solid #b42318;background:#fff4f3;padding:24px;margin:0 0 38px}.delivery-issues-panel h2{font-size:1.35rem;margin-bottom:18px}.delivery-issue-list{border-top:1px solid #e6b8b3}.delivery-issue-list article{display:grid;grid-template-columns:minmax(180px,.7fr) minmax(260px,1.3fr);gap:18px;padding:13px 0;border-bottom:1px solid #e6b8b3}.delivery-issue-list article>div{display:grid;gap:2px}.delivery-issue-list b{color:#7a271a;text-transform:capitalize}.delivery-issue-list span,.delivery-issue-list small{color:#7a271a;font-size:.82rem;overflow-wrap:anywhere}
 @media(max-width:1000px){.admin-summary{grid-template-columns:repeat(3,minmax(0,1fr))}.admin-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.filter-clear{justify-self:start}}
 @media(max-width:600px){.admin-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.summary-card{min-height:118px;padding:15px}.admin-alert{align-items:flex-start;flex-direction:column}.admin-filters{grid-template-columns:1fr}.delivery-grid,.onboarding-checks{grid-template-columns:1fr}.delivery-issue-list article{grid-template-columns:1fr;gap:7px}.application-row{padding:16px 4px}}
+
+/* Administrator multi-factor authentication */
+.mfa-setup{display:grid;justify-items:center;gap:12px;margin:4px 0 8px}
+.mfa-setup p{margin:0;text-align:center;font-size:.92rem}
+.mfa-qr{display:block;width:min(220px,100%);height:auto;background:#fff;border:1px solid #bcccdc;padding:10px}
+.mfa-setup details{width:100%;font-size:.84rem;color:#486581}
+.mfa-setup summary{cursor:pointer;font-weight:700;color:#243b53}
+.mfa-setup code{display:block;margin-top:8px;padding:9px;background:#fff;border:1px solid #d9e2ec;overflow-wrap:anywhere;color:#102a43}

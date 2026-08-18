@@ -35,3 +35,18 @@ test('administrator dashboard controls collapse for mobile screens', async () =>
   assert.match(styles, /@media\(max-width:600px\).*\.admin-filters\{grid-template-columns:1fr\}/)
   assert.match(styles, /@media\(max-width:600px\).*\.delivery-grid,\.onboarding-checks\{grid-template-columns:1fr\}/)
 })
+
+test('administrator login enrolls, challenges, and enforces TOTP MFA', async () => {
+  const portal = await read('src/Portal.tsx')
+  const server = await read('server.mjs')
+  const workflows = await read('server/workflow-notifications.mjs')
+
+  assert.match(portal, /auth\.mfa\.enroll\(\{ factorType: 'totp'/)
+  assert.match(portal, /auth\.mfa\.challengeAndVerify/)
+  assert.match(portal, /getAuthenticatorAssuranceLevel/)
+  assert.match(portal, /currentLevel !== 'aal2'/)
+  assert.match(server, /getAuthenticatorAssuranceLevel\(token\)/)
+  assert.match(server, /Administrator multi-factor authentication is required/)
+  assert.match(workflows, /expectedRole === 'admin'/)
+  assert.match(workflows, /Administrator multi-factor authentication is required/)
+})

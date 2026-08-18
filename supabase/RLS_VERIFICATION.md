@@ -54,7 +54,11 @@ rollback;
 ```sql
 begin;
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'ADMIN_AUTH_UUID', true);
+select set_config(
+  'request.jwt.claims',
+  json_build_object('sub', 'ADMIN_AUTH_UUID', 'role', 'authenticated', 'aal', 'aal2')::text,
+  true
+);
 
 select public.is_admin(); -- Must return true.
 select * from public.session_change_requests; -- Must return all test requests.

@@ -53,3 +53,11 @@ test('security hardening rate-limits applications and blocks direct workflow byp
   assert.match(sql, /revoke insert, update on public\.session_change_requests from authenticated/)
   assert.match(sql, /revoke update on public\.applications from authenticated/)
 })
+
+test('administrator database access requires an MFA-authenticated session', async () => {
+  const sql = await migration('20260818_admin_mfa.sql')
+  assert.match(sql, /create or replace function public\.is_admin\(\)/)
+  assert.match(sql, /auth\.jwt\(\) ->> 'aal'/)
+  assert.match(sql, /= 'aal2'/)
+  assert.match(sql, /role = 'admin'/)
+})

@@ -11,6 +11,7 @@ Existing projects that already have the first five migrations should run the rem
 3. [`supabase/migrations/20260806_data_retention.sql`](supabase/migrations/20260806_data_retention.sql)
 4. [`supabase/migrations/20260813_workflow_notifications.sql`](supabase/migrations/20260813_workflow_notifications.sql)
 5. [`supabase/migrations/20260817_security_hardening.sql`](supabase/migrations/20260817_security_hardening.sql)
+6. [`supabase/migrations/20260818_admin_mfa.sql`](supabase/migrations/20260818_admin_mfa.sql)
 
 For a new Supabase project, run the complete order:
 
@@ -24,6 +25,7 @@ For a new Supabase project, run the complete order:
 8. `20260806_data_retention.sql`
 9. `20260813_workflow_notifications.sql`
 10. `20260817_security_hardening.sql`
+11. `20260818_admin_mfa.sql`
 
 Afterward, run the checks in `supabase/RLS_VERIFICATION.md` with disposable test records.
 
@@ -37,6 +39,8 @@ Enable Supabase Cron and create the daily job documented in `README.md`. Run `se
 - Add `https://nazarschoolofmath.com/` to allowed redirect URLs for password recovery.
 - Add `http://localhost:3000/` only when local password-recovery testing is needed.
 - Confirm Nazar's Auth UUID has the `admin` role.
+- Confirm TOTP multi-factor verification is enabled, enroll the administrator account, sign out, and confirm the next sign-in requires a six-digit authenticator code.
+- Confirm an administrator password-only (`aal1`) session cannot read administrator data or call an administrator server endpoint.
 - Create Auth users only for accepted families and active tutors.
 - Confirm every Auth UUID is linked to exactly one appropriate parent, student, or tutor record and has the matching `user_roles` row.
 

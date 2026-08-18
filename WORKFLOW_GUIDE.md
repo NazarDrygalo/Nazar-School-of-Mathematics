@@ -177,6 +177,7 @@ Security is enforced at multiple levels:
 - **Row Level Security:** Supabase policies restrict which database rows each user can read or change.
 - **Assignment checks:** Tutors can write student data only when an active assignment connects the tutor and student.
 - **Administrator API checks:** Sensitive status changes require a valid access token and the `admin` role.
+- **Administrator MFA:** Administrator database reads and server API calls additionally require an `aal2` session produced by a verified TOTP authenticator code.
 - **Server-only credentials:** The Supabase service-role key and Resend API key remain on the server and are never exposed through `VITE_` variables.
 - **Security headers:** The Node server sets CSP, HSTS, clickjacking protection, browser-permission restrictions, and related headers for API and static responses.
 - **Application abuse protection:** Public applications require JSON, validate the browser origin, and use persistent HMAC-based IP and email rate limits without storing raw IP or email values in the rate-limit table.

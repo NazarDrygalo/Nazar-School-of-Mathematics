@@ -55,7 +55,11 @@ export function PortalLogin() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
-  const [mode, setMode] = useState<'signin' | 'reset-request' | 'update-password'>(() => location.hash.includes('type=recovery') ? 'update-password' : 'signin')
+  const [mode, setMode] = useState<'signin' | 'reset-request' | 'update-password' | 'mfa-enroll' | 'mfa-challenge'>(() => location.hash.includes('type=recovery') ? 'update-password' : 'signin')
+  const [mfaCode, setMfaCode] = useState('')
+  const [mfaFactorId, setMfaFactorId] = useState('')
+  const [mfaQrCode, setMfaQrCode] = useState('')
+  const [mfaSecret, setMfaSecret] = useState('')
 
   useEffect(() => {
     if (!supabase) return
@@ -63,10 +67,54 @@ export function PortalLogin() {
     return () => data.subscription.unsubscribe()
   }, [])
 
+  async function prepareAdministratorMfa() {
+    if (!supabase) throw new Error('Portal login is not configured.')
+    const { data: assurance, error: assuranceError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+    if (assuranceError) throw assuranceError
+    if (assurance.currentLevel === 'aal2') { navigateTo('admin'); return }
+
+    const { data: factors, error: factorsError } = await supabase.auth.mfa.listFactors()
+    if (factorsError) throw factorsError
+    const verifiedFactor = factors.totp.find(factor => factor.status === 'verified')
+    if (verifiedFactor) {
+      setMfaFactorId(verifiedFactor.id)
+      setMfaCode('')
+      setMode('mfa-challenge')
+      return
+    }
+
+    for (const factor of factors.all.filter(factor => factor.status === 'unverified')) {
+      await supabase.auth.mfa.unenroll({ factorId: factor.id })
+    }
+    const { data: enrollment, error: enrollmentError } = await supabase.auth.mfa.enroll({ factorType: 'totp', friendlyName: 'Administrator authenticator' })
+    if (enrollmentError) throw enrollmentError
+    setMfaFactorId(enrollment.id)
+    setMfaQrCode(enrollment.totp.qr_code)
+    setMfaSecret(enrollment.totp.secret)
+    setMfaCode('')
+    setMode('mfa-enroll')
+  }
+
+  async function verifyAdministratorMfa() {
+    if (!supabase || !mfaFactorId) throw new Error('The authentication challenge has expired. Sign in again.')
+    if (!/^\d{6}$/.test(mfaCode.trim())) throw new Error('Enter the six-digit code from your authenticator app.')
+    const { error: verifyError } = await supabase.auth.mfa.challengeAndVerify({ factorId: mfaFactorId, code: mfaCode.trim() })
+    if (verifyError) throw new Error('The verification code was not accepted. Wait for a new code and try again.')
+    const { data: assurance, error: assuranceError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+    if (assuranceError || assurance.currentLevel !== 'aal2') throw new Error('Multi-factor authentication could not be confirmed. Please try again.')
+    navigateTo('admin')
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault()
     if (!supabase) { setError('Portal login is not configured yet. Add the browser-safe Supabase URL and publishable key.'); return }
     setBusy(true); setError(''); setMessage('')
+    if (mode === 'mfa-enroll' || mode === 'mfa-challenge') {
+      try { await verifyAdministratorMfa() }
+      catch (mfaError) { setError(mfaError instanceof Error ? mfaError.message : 'Multi-factor authentication failed.') }
+      finally { setBusy(false) }
+      return
+    }
     if (mode === 'reset-request') {
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${location.origin}/` })
       setBusy(false)
@@ -83,15 +131,23 @@ export function PortalLogin() {
     const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password })
     if (signInError || !data.user) { setBusy(false); setError('We could not sign you in. Please check your email address and password.'); return }
     const { data: role, error: roleError } = await supabase.from('user_roles').select('role').eq('user_id', data.user.id).maybeSingle()
+    if (roleError || !role) { await supabase.auth.signOut(); setBusy(false); setError('Your account is not assigned to a portal yet. Please contact the school.'); return }
+    if (role.role === 'admin') {
+      try { await prepareAdministratorMfa() }
+      catch { await supabase.auth.signOut(); setMode('signin'); setError('Administrator multi-factor authentication could not be prepared. Please try again.') }
+      finally { setBusy(false) }
+      return
+    }
     setBusy(false)
-    if (roleError || !role) { await supabase.auth.signOut(); setError('Your account is not assigned to a portal yet. Please contact the school.'); return }
-    if (['admin', 'parent', 'student', 'tutor'].includes(role.role)) { navigateTo(role.role as Page); return }
+    if (['parent', 'student', 'tutor'].includes(role.role)) { navigateTo(role.role as Page); return }
     await supabase.auth.signOut()
     setError('Your account is not assigned to a portal yet. Please contact the school.')
   }
 
-  const title = mode === 'signin' ? 'Sign in' : mode === 'reset-request' ? 'Reset your password' : 'Choose a new password'
-  return <section className="portal-page"><div className="portal-intro"><p className="eyebrow">Secure portal</p><h1>Portal Login</h1><p>Private access for administrators, parents, students, and tutors of Nazar’s School of Mathematics.</p></div><form className="login-form" onSubmit={submit}><h2>{title}</h2>{!supabase && <SetupNotice />}{error && <div className="form-error" role="alert">{error}</div>}{message && <p className="dashboard-message" role="status">{message}</p>}{mode !== 'update-password' && <><label htmlFor="portal-email">Email address</label><input id="portal-email" type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} /></>}{mode !== 'reset-request' && <><label htmlFor="portal-password">{mode === 'signin' ? 'Password' : 'New password'}</label><input id="portal-password" type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} minLength={mode === 'signin' ? undefined : 10} required value={password} onChange={e => setPassword(e.target.value)} /></>}{mode === 'update-password' && <><label htmlFor="portal-password-confirm">Confirm new password</label><input id="portal-password-confirm" type="password" autoComplete="new-password" minLength={10} required value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} /></>}<button className="button" disabled={busy}>{busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : mode === 'reset-request' ? 'Send reset link' : 'Update password'}</button>{mode === 'signin' ? <button type="button" className="text-button" onClick={() => { setMode('reset-request'); setError(''); setMessage('') }}>Forgot your password?</button> : mode === 'reset-request' && <button type="button" className="text-button" onClick={() => { setMode('signin'); setError(''); setMessage('') }}>Return to sign in</button>}</form></section>
+  const title = mode === 'signin' ? 'Sign in' : mode === 'reset-request' ? 'Reset your password' : mode === 'update-password' ? 'Choose a new password' : mode === 'mfa-enroll' ? 'Protect the administrator account' : 'Administrator verification'
+  const buttonLabel = mode === 'signin' ? 'Sign in' : mode === 'reset-request' ? 'Send reset link' : mode === 'update-password' ? 'Update password' : mode === 'mfa-enroll' ? 'Verify and enable MFA' : 'Verify code'
+  const mfaMode = mode === 'mfa-enroll' || mode === 'mfa-challenge'
+  return <section className="portal-page"><div className="portal-intro"><p className="eyebrow">Secure portal</p><h1>Portal Login</h1><p>Private access for administrators, parents, students, and tutors of Nazar’s School of Mathematics.</p></div><form className="login-form" onSubmit={submit}><h2>{title}</h2>{!supabase && <SetupNotice />}{error && <div className="form-error" role="alert">{error}</div>}{message && <p className="dashboard-message" role="status">{message}</p>}{mode === 'signin' && <><label htmlFor="portal-email">Email address</label><input id="portal-email" type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} /><label htmlFor="portal-password">Password</label><input id="portal-password" type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} /></>}{mode === 'reset-request' && <><label htmlFor="portal-email">Email address</label><input id="portal-email" type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} /></>}{mode === 'update-password' && <><label htmlFor="portal-password">New password</label><input id="portal-password" type="password" autoComplete="new-password" minLength={10} required value={password} onChange={e => setPassword(e.target.value)} /><label htmlFor="portal-password-confirm">Confirm new password</label><input id="portal-password-confirm" type="password" autoComplete="new-password" minLength={10} required value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} /></>}{mode === 'mfa-enroll' && <div className="mfa-setup"><p>Scan this QR code with an authenticator app, then enter its current six-digit code.</p><img className="mfa-qr" src={mfaQrCode} alt="QR code for administrator multi-factor authentication" /><details><summary>Enter a setup key instead</summary><code>{mfaSecret}</code></details></div>}{mfaMode && <><label htmlFor="portal-mfa-code">Six-digit authentication code</label><input id="portal-mfa-code" type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={mfaCode} onChange={e => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))} /></>}<button className="button" disabled={busy}>{busy ? 'Please wait…' : buttonLabel}</button>{mode === 'signin' ? <button type="button" className="text-button" onClick={() => { setMode('reset-request'); setError(''); setMessage('') }}>Forgot your password?</button> : mode === 'reset-request' ? <button type="button" className="text-button" onClick={() => { setMode('signin'); setError(''); setMessage('') }}>Return to sign in</button> : mfaMode && <button type="button" className="text-button" onClick={async () => { await supabase?.auth.signOut(); setMode('signin'); setMfaCode(''); setMfaFactorId(''); setError('') }}>Cancel and sign out</button>}</form></section>
 }
 
 export function AdminDashboard() {
@@ -114,6 +170,8 @@ export function AdminDashboard() {
     if (!session.session) { setStatus('unauthorized'); return }
     const { data: role } = await supabase.from('user_roles').select('role').eq('user_id', session.session.user.id).maybeSingle()
     if (role?.role !== 'admin') { await supabase.auth.signOut(); setStatus('unauthorized'); return }
+    const { data: assurance, error: assuranceError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+    if (assuranceError || assurance.currentLevel !== 'aal2') { navigateTo('portal', true); return }
     const [applicationResult, tutorResult, assignmentResult, sessionResult, requestResult, deliveryResult] = await Promise.all([
       supabase.from('applications').select('id, created_at, status, notification_status, notification_error, accepted_email_status, accepted_email_sent_at, accepted_email_error, service_area, help_areas, academic_goals, preferred_days, preferred_times, timezone, parents(id,auth_user_id,first_name,last_name,email,phone), students(id,auth_user_id,active,first_name,last_name,grade,school,current_course)').order('created_at', { ascending: false }),
       supabase.from('tutors').select('id,first_name,last_name,email,active,auth_user_id').order('first_name'),

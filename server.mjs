@@ -179,6 +179,9 @@ async function requireAdmin(req) {
   const { data: role, error: roleError } = await supabase.from('user_roles').select('role').eq('user_id', authData.user.id).maybeSingle()
   if (roleError) throw Object.assign(new Error('The administrator role could not be verified.'), { status: 503 })
   if (role?.role !== 'admin') throw Object.assign(new Error('Administrator access is required.'), { status: 403 })
+  const { data: assurance, error: assuranceError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel(token)
+  if (assuranceError) throw Object.assign(new Error('Multi-factor authentication could not be verified.'), { status: 503 })
+  if (assurance.currentLevel !== 'aal2') throw Object.assign(new Error('Administrator multi-factor authentication is required.'), { status: 403 })
   return { supabase, user: authData.user }
 }
 
