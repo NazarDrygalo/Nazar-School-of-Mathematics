@@ -72,3 +72,8 @@
 .mfa-setup details{width:100%;font-size:.84rem;color:#486581}
 .mfa-setup summary{cursor:pointer;font-weight:700;color:#243b53}
 .mfa-setup code{display:block;margin-top:8px;padding:9px;background:#fff;border:1px solid #d9e2ec;overflow-wrap:anywhere;color:#102a43}
+
+/* Public application bot verification */
+.turnstile-wrap{width:100%;max-width:420px;margin-top:30px;min-height:65px}
+.turnstile-wrap>div{width:100%}
+.turnstile-error{border-left:3px solid #b42318;background:#fff4f3;color:#7a271a;padding:12px 14px;margin:28px 0 0}

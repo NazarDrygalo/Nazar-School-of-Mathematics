@@ -55,6 +55,8 @@ Confirm these values exist in Render and are not exposed through `VITE_` variabl
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_PUBLISHABLE_KEY`
+- `VITE_TURNSTILE_SITE_KEY`
+- `TURNSTILE_SECRET_KEY`
 
 Also set `PUBLIC_SITE_ORIGIN=https://nazarschoolofmath.com`. `RATE_LIMIT_SECRET` is optional; when omitted, the server uses the server-only Supabase service-role key to create irreversible rate-limit hashes.
 
@@ -73,6 +75,7 @@ Check desktop and mobile layouts at minimum on Home, Resources, Apply, Portal Lo
 ## 6. Workflow smoke tests
 
 - Submit one application and confirm it is stored once.
+- Confirm the application button remains disabled until Turnstile succeeds, an expired token resets, and a server request without a valid token is rejected.
 - Confirm the administrator and parent receipt emails are delivered.
 - Accept it and confirm exactly one acceptance email is delivered.
 - Create or activate a tutor record; confirm this does not send an invitation.

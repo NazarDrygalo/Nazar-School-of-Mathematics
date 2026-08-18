@@ -5,8 +5,9 @@ import { test } from 'node:test'
 process.env.RESEND_API_KEY = 'placeholder'
 process.env.SUPABASE_URL = 'https://placeholder.example.com'
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'placeholder'
+process.env.TURNSTILE_SECRET_KEY = 'turnstile-test-secret'
 
-const { renderIndexHtml, requestHandler } = await import('../server.mjs')
+const { renderIndexHtml, requestHandler, verifyTurnstile } = await import('../server.mjs')
 
 function request({ method = 'GET', url = '/', headers = {}, body = '' }) {
   return new Promise((resolve, reject) => {
@@ -70,6 +71,23 @@ test('responses include browser security headers', async () => {
   assert.equal(response.headers['Strict-Transport-Security'], 'max-age=31536000; includeSubDomains')
   assert.match(response.headers['Permissions-Policy'], /camera=\(\)/)
   assert.equal(response.headers['X-Content-Type-Options'], 'nosniff')
+  assert.match(response.headers['Content-Security-Policy'], /frame-src https:\/\/challenges\.cloudflare\.com/)
+})
+
+test('Turnstile verification validates hostname and action on the server', async () => {
+  const originalFetch = globalThis.fetch
+  try {
+    globalThis.fetch = async () => new Response(JSON.stringify({ success: true, hostname: 'nazarschoolofmath.com', action: 'application' }), { status: 200 })
+    await assert.doesNotReject(() => verifyTurnstile({ headers: {}, socket: { remoteAddress: '127.0.0.1' } }, 'valid-test-token', crypto.randomUUID()))
+
+    globalThis.fetch = async () => new Response(JSON.stringify({ success: true, hostname: 'attacker.example', action: 'application' }), { status: 200 })
+    await assert.rejects(() => verifyTurnstile({ headers: {}, socket: { remoteAddress: '127.0.0.1' } }, 'wrong-host-token', crypto.randomUUID()), /another site/i)
+
+    globalThis.fetch = async () => new Response(JSON.stringify({ success: false, 'error-codes': ['timeout-or-duplicate'] }), { status: 200 })
+    await assert.rejects(() => verifyTurnstile({ headers: {}, socket: { remoteAddress: '127.0.0.1' } }, 'expired-token', crypto.randomUUID()), /expired or was not accepted/i)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })
 
 test('workflow mutation endpoints reject unsupported methods', async () => {

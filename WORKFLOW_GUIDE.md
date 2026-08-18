@@ -181,6 +181,7 @@ Security is enforced at multiple levels:
 - **Server-only credentials:** The Supabase service-role key and Resend API key remain on the server and are never exposed through `VITE_` variables.
 - **Security headers:** The Node server sets CSP, HSTS, clickjacking protection, browser-permission restrictions, and related headers for API and static responses.
 - **Application abuse protection:** Public applications require JSON, validate the browser origin, and use persistent HMAC-based IP and email rate limits without storing raw IP or email values in the rate-limit table.
+- **Bot verification:** Cloudflare Turnstile issues a short-lived, single-use token in the browser; the server validates its signature, hostname, and action before saving an application.
 - **Workflow enforcement:** Session scheduling, change requests, resolutions, and session notes use narrow server endpoints or database functions; direct browser mutations that could bypass audit or notification behavior are revoked.
 
 Frontend controls improve usability, but database policies are the authoritative access boundary.

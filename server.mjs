@@ -42,10 +42,10 @@ function securityHeaders(nonce = '') {
     try { return new URL(process.env.SUPABASE_URL || '').origin }
     catch { return '' }
   })()
-  const connectSources = ["'self'", supabaseOrigin, supabaseOrigin ? supabaseOrigin.replace(/^https:/, 'wss:') : ''].filter(Boolean).join(' ')
-  const scriptSources = ["'self'", nonce ? `'nonce-${nonce}'` : ''].filter(Boolean).join(' ')
+  const connectSources = ["'self'", supabaseOrigin, supabaseOrigin ? supabaseOrigin.replace(/^https:/, 'wss:') : '', 'https://challenges.cloudflare.com'].filter(Boolean).join(' ')
+  const scriptSources = ["'self'", nonce ? `'nonce-${nonce}'` : '', 'https://challenges.cloudflare.com'].filter(Boolean).join(' ')
   return {
-    'Content-Security-Policy': `default-src 'self'; base-uri 'self'; connect-src ${connectSources}; font-src 'self' https://fonts.gstatic.com data:; form-action 'self'; frame-ancestors 'none'; frame-src 'none'; img-src 'self' data:; object-src 'none'; script-src ${scriptSources}; style-src 'self' https://fonts.googleapis.com; upgrade-insecure-requests`,
+    'Content-Security-Policy': `default-src 'self'; base-uri 'self'; connect-src ${connectSources}; font-src 'self' https://fonts.gstatic.com data:; form-action 'self'; frame-ancestors 'none'; frame-src https://challenges.cloudflare.com; img-src 'self' data:; object-src 'none'; script-src ${scriptSources}; style-src 'self' https://fonts.googleapis.com; upgrade-insecure-requests`,
     'Cross-Origin-Opener-Policy': 'same-origin',
     'Cross-Origin-Resource-Policy': 'same-origin',
     'Permissions-Policy': 'camera=(), geolocation=(), microphone=(), payment=(), usb=()',
@@ -136,17 +136,36 @@ function clientAddress(req) {
     || 'unknown'
 }
 
-async function claimApplicationRateLimit(supabase, req, email) {
-  const checks = [
-    { rate_key: rateLimitKey('ip', clientAddress(req)), max_requests: 5, window_seconds: 3600 },
-    { rate_key: rateLimitKey('email', clean(email).toLowerCase()), max_requests: 3, window_seconds: 86400 }
-  ]
-  for (const check of checks) {
-    const { data, error } = await supabase.rpc('claim_application_submission_rate_limit', check)
-    if (error) throw Object.assign(new Error('Application rate limiting is unavailable.'), { status: 503 })
-    if (!data) return false
+async function claimApplicationRateLimit(supabase, namespace, value, maxRequests, windowSeconds) {
+  const { data, error } = await supabase.rpc('claim_application_submission_rate_limit', {
+    rate_key: rateLimitKey(namespace, value), max_requests: maxRequests, window_seconds: windowSeconds
+  })
+  if (error) throw Object.assign(new Error('Application rate limiting is unavailable.'), { status: 503 })
+  return Boolean(data)
+}
+
+export async function verifyTurnstile(req, token, requestId) {
+  const secret = process.env.TURNSTILE_SECRET_KEY
+  if (!secret) throw Object.assign(new Error('Automated submission verification is not configured.'), { status: 503 })
+  if (!token || token.length > 2048) throw Object.assign(new Error('Complete the automated submission check and try again.'), { status: 400 })
+  let response
+  try {
+    response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ secret, response: token, remoteip: clientAddress(req), idempotency_key: requestId }),
+      signal: AbortSignal.timeout(8000)
+    })
+  } catch {
+    throw Object.assign(new Error('Automated submission verification is temporarily unavailable.'), { status: 503 })
   }
-  return true
+  if (!response.ok) throw Object.assign(new Error('Automated submission verification is temporarily unavailable.'), { status: 503 })
+  const result = await response.json().catch(() => null)
+  if (!result?.success) throw Object.assign(new Error('Automated submission verification expired or was not accepted. Please try again.'), { status: 400 })
+  const expectedHostname = new URL(siteOrigin).hostname
+  const allowedHostnames = new Set([expectedHostname, 'localhost', '127.0.0.1'])
+  if (result.hostname && !allowedHostnames.has(result.hostname)) throw Object.assign(new Error('Automated submission verification was issued for another site.'), { status: 400 })
+  if (result.action && result.action !== 'application') throw Object.assign(new Error('Automated submission verification was issued for another action.'), { status: 400 })
 }
 async function recordNotificationStatus(supabase, applicationId, status, error = null) {
   const { error: updateError } = await supabase.from('applications').update({ notification_status: status, notification_attempted_at: new Date().toISOString(), notification_error: error }).eq('id', applicationId)
@@ -309,14 +328,28 @@ export async function requestHandler(req, res) {
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) return sendJson(res, 400, { error: 'Please refresh the page and try submitting again.' })
         if (!isSupabaseConfigured()) return sendJson(res, 503, { error: 'Applications are not configured for secure submission yet. Please contact the school directly by email.' })
         const supabase = createSupabaseAdminClient()
-        let withinRateLimit
+        let withinIpRateLimit
         try {
-          withinRateLimit = await claimApplicationRateLimit(supabase, req, data.email)
+          withinIpRateLimit = await claimApplicationRateLimit(supabase, 'ip', clientAddress(req), 20, 3600)
         } catch (rateLimitError) {
           console.error('Application rate limit failed:', rateLimitError.message)
           return sendJson(res, rateLimitError.status || 503, { error: 'Applications are temporarily unavailable. Please try again shortly.' })
         }
-        if (!withinRateLimit) return sendJson(res, 429, { error: 'Too many applications were submitted. Please wait and try again.' }, { 'Retry-After': '3600' })
+        if (!withinIpRateLimit) return sendJson(res, 429, { error: 'Too many application attempts were made. Please wait and try again.' }, { 'Retry-After': '3600' })
+        try {
+          await verifyTurnstile(req, clean(data.turnstileToken, 2048), requestId)
+        } catch (turnstileError) {
+          console.error('Turnstile verification failed:', turnstileError.message)
+          return sendJson(res, turnstileError.status || 503, { error: turnstileError.message || 'Automated submission verification failed.' })
+        }
+        let withinEmailRateLimit
+        try {
+          withinEmailRateLimit = await claimApplicationRateLimit(supabase, 'email', clean(data.email).toLowerCase(), 3, 86400)
+        } catch (rateLimitError) {
+          console.error('Application rate limit failed:', rateLimitError.message)
+          return sendJson(res, rateLimitError.status || 503, { error: 'Applications are temporarily unavailable. Please try again shortly.' })
+        }
+        if (!withinEmailRateLimit) return sendJson(res, 429, { error: 'Too many applications were submitted. Please wait and try again.' }, { 'Retry-After': '86400' })
         let stored
         try {
           stored = await saveApplication(data, requestId, supabase)

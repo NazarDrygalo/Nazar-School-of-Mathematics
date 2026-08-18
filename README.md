@@ -34,6 +34,8 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your_server_only_service_role_key
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=your_browser_safe_publishable_key
+VITE_TURNSTILE_SITE_KEY=your_browser_safe_turnstile_site_key
+TURNSTILE_SECRET_KEY=your_server_only_turnstile_secret_key
 ```
 
 Optional variables:
@@ -46,6 +48,19 @@ PORT=3000
 ```
 
 `RATE_LIMIT_SECRET` is used only to create irreversible application rate-limit keys. If omitted, the server-only Supabase service-role key is used instead. The server rejects non-JSON application requests and browser submissions from origins other than `PUBLIC_SITE_ORIGIN`.
+
+## Application bot protection
+
+The public application form uses Cloudflare Turnstile. In the Cloudflare dashboard, create a managed Turnstile widget restricted to `nazarschoolofmath.com`. Put its public site key in `VITE_TURNSTILE_SITE_KEY` and its private secret in `TURNSTILE_SECRET_KEY`. Never add a `VITE_` prefix to the secret.
+
+The browser widget alone is not trusted. Every application token is validated by `server.mjs` through Cloudflare Siteverify, including its hostname and `application` action, before the application is saved. Tokens are single-use and are reset after an unsuccessful submission.
+
+For local development only, use Cloudflare's documented always-pass test pair:
+
+```env
+VITE_TURNSTILE_SITE_KEY=1x00000000000000000000AA
+TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
+```
 
 Without `FROM_EMAIL`, the site uses Resend’s `onboarding@resend.dev` testing sender. Resend only permits that sender to deliver to the email address associated with the Resend account, so this is suitable while the school recipient email is that account email. To accept applications at any other address, add a verified domain and set `FROM_EMAIL` to an address at that domain. The local server reads `.env` for convenience; production hosts should configure the same values in their environment settings. Until the required variables are supplied, the application endpoint returns a clear configuration error instead of claiming a submission was delivered.
 
