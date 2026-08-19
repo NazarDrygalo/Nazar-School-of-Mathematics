@@ -117,7 +117,7 @@ export function PortalLogin() {
       return
     }
     if (mode === 'reset-request') {
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${location.origin}/` })
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${location.origin}/portal` })
       setBusy(false)
       if (resetError) { setError('We could not send a password-reset email. Confirm the address and try again.'); return }
       setMessage('If this email belongs to a portal account, a password-reset link has been sent.'); return

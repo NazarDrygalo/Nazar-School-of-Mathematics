@@ -42,8 +42,7 @@ Enable Supabase Cron and create the daily job documented in `README.md`. Run `se
 ## 3. Supabase Authentication
 
 - Confirm the production Site URL is `https://nazarschoolofmath.com`.
-- Add `https://nazarschoolofmath.com/` to allowed redirect URLs for password recovery.
-- Add `https://nazarschoolofmath.com/portal` to allowed redirect URLs for portal setup invitations.
+- Add `https://nazarschoolofmath.com/portal` to allowed redirect URLs for password recovery and portal setup invitations.
 - Add `http://localhost:3000/` only when local password-recovery testing is needed.
 - Confirm Nazar's Auth UUID has the `admin` role.
 - Confirm TOTP multi-factor verification is enabled, enroll the administrator account, sign out, and confirm the next sign-in requires a six-digit authenticator code.

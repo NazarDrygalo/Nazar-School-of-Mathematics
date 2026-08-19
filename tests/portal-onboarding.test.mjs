@@ -53,3 +53,11 @@ test('administrator UI confirms recipients and supports parent, student, and tut
   assert.match(styles, /\.portal-invite-box/)
   assert.match(styles, /@media\(max-width:600px\).*\.portal-invite-box/s)
 })
+
+test('password recovery returns directly to the portal password form', async () => {
+  const portal = await read('src/Portal.tsx')
+  const routes = await read('src/routes.ts')
+  assert.match(portal, /resetPasswordForEmail\(email, \{ redirectTo: `\$\{location\.origin\}\/portal` \}\)/)
+  assert.match(portal, /PASSWORD_RECOVERY/)
+  assert.match(routes, /location\.hash\.includes\('type=recovery'\).*return 'portal'/s)
+})
