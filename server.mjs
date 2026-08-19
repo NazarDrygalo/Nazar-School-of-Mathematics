@@ -5,6 +5,7 @@ import { extname, isAbsolute, join, normalize, relative } from 'node:path'
 import { createSupabaseAdminClient, isSupabaseConfigured } from './server/supabase.mjs'
 import { createSessionChangeRequest, resolveSessionChangeRequest, saveTutorSession } from './server/workflow-notifications.mjs'
 import { inviteAcceptedFamily, inviteTutor } from './server/portal-onboarding.mjs'
+import { beginGoogleCalendarAuthorization, completeGoogleCalendarAuthorization, disconnectGoogleCalendar, getGoogleCalendarStatus } from './server/google-calendar.mjs'
 
 // Local convenience only; hosted platforms should provide these through their environment.
 if (existsSync('.env')) {
@@ -275,7 +276,39 @@ async function workflowAction(req, res, action) {
   }
 }
 
+async function secureReadAction(res, action) {
+  try { return sendJson(res, 200, await action()) }
+  catch (error) {
+    console.error('Secure integration action failed:', error.message)
+    return sendJson(res, error.status || 500, { error: error.message || 'The integration action could not be completed.' })
+  }
+}
+
 export async function requestHandler(req, res) {
+  const requestPath = req.url?.split('?')[0]
+  if (requestPath === '/api/integrations/google-calendar/callback') {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed.' })
+    try {
+      const result = await completeGoogleCalendarAuthorization(new URL(req.url, siteOrigin).searchParams)
+      writeHead(res, 302, { Location: result.redirect })
+    } catch (error) {
+      console.error('Google Calendar callback failed:', error.message)
+      writeHead(res, 302, { Location: `${siteOrigin}/tutor?calendar=error` })
+    }
+    return res.end()
+  }
+  if (requestPath === '/api/tutor/google-calendar/status') {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed.' })
+    return secureReadAction(res, () => getGoogleCalendarStatus(req))
+  }
+  if (requestPath === '/api/tutor/google-calendar/authorize') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' })
+    return workflowAction(req, res, () => beginGoogleCalendarAuthorization(req))
+  }
+  if (requestPath === '/api/tutor/google-calendar/disconnect') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' })
+    return workflowAction(req, res, () => disconnectGoogleCalendar(req))
+  }
   const familyInvitationMatch = req.url?.split('?')[0].match(/^\/api\/admin\/applications\/([0-9a-f-]+)\/portal-invitations$/i)
   if (familyInvitationMatch) {
     if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' })

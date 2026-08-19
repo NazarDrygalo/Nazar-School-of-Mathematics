@@ -132,6 +132,8 @@ The student portal is read-only for tutoring records.
 An active tutor can work only with students currently assigned to that tutor. The tutor can:
 
 - View assigned students.
+- Define recurring weekly availability and one-off unavailable times.
+- Connect or disconnect the tutor's own Google Calendar.
 - Schedule sessions.
 - Edit session times, duration, meeting links, and status.
 - Create assignments.
@@ -145,6 +147,18 @@ Database policies require both an active tutor and an active tutor/student assig
 Session times are saved as UTC timestamps. Each portal displays them in the viewer's local time zone.
 
 Session durations must be between 15 minutes and four hours. The interface provides common duration choices, including 30, 45, 60, 75, 90, and 120 minutes.
+
+Tutors add one or more recurring weekly windows in their own time zone. After the first window is added, every newly scheduled lesson must fit completely within one window. Tutors may also add one-off unavailable blocks for appointments, holidays, or other exceptions. A scheduled lesson cannot overlap another scheduled lesson or an unavailable block. These checks run atomically in the database for both tutor edits and administrator-approved rescheduling requests, preventing simultaneous requests from double-booking a tutor.
+
+Existing sessions are not changed when availability is first configured. If a tutor has not added weekly hours yet, the system still prevents overlapping sessions and unavailable blocks but does not impose a weekly window.
+
+### Google Calendar
+
+An active tutor may authorize the platform to manage tutoring events on the tutor's primary Google Calendar. Authorization uses Google's web-server OAuth flow and the narrow `calendar.events.owned` scope. The browser never receives the refresh token; the server encrypts it before storage.
+
+When a calendar is first connected, up to 100 future scheduled sessions are added. A deterministic Google event ID prevents duplicate events during retries. Scheduled-session edits and approved rescheduling requests update the same event, while cancellations and other non-scheduled statuses remove it. Events are marked private and show only the student's first name and last initial.
+
+Calendar synchronization is deliberately non-blocking. Supabase remains the source of truth: if Google is unavailable or authorization expires, the tutoring change and email workflow still complete and the tutor dashboard displays the calendar error. Disconnecting revokes the stored credential when Google is reachable and always removes the encrypted local credential; existing Google events are left unchanged.
 
 Available session statuses are:
 
@@ -293,6 +307,6 @@ RATE_LIMIT_SECRET=...
 
 ## 12. Current scope
 
-The platform currently supports applications, automated portal account onboarding, role-based portals, tutor assignments, scheduling, assignments, progress tracking, session notes, family change requests, password recovery, email delivery, and automated data retention.
+The platform currently supports applications, automated portal account onboarding, role-based portals, tutor assignments, recurring tutor availability, conflict-aware scheduling, Google Calendar synchronization, assignments, progress tracking, session notes, family change requests, password recovery, email delivery, and automated data retention.
 
-Payments, invoicing, and external calendar integrations are intentionally outside the current scope. They should be added only after the relevant providers, pricing, refund rules, and scheduling policies have been formally selected.
+Payments and invoicing are intentionally outside the platform because the school handles them through direct personal arrangements.

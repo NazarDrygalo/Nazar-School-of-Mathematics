@@ -111,6 +111,17 @@ test('portal invitation endpoints reject unsupported methods and require secure 
   assert.match(unconfigured.body.error, /not configured/i)
 })
 
+test('Google Calendar integration endpoints reject unsupported methods', async () => {
+  const status = await request({ method: 'POST', url: '/api/tutor/google-calendar/status' })
+  const authorize = await request({ url: '/api/tutor/google-calendar/authorize' })
+  const disconnect = await request({ url: '/api/tutor/google-calendar/disconnect' })
+  const callback = await request({ method: 'POST', url: '/api/integrations/google-calendar/callback' })
+  assert.equal(status.status, 405)
+  assert.equal(authorize.status, 405)
+  assert.equal(disconnect.status, 405)
+  assert.equal(callback.status, 405)
+})
+
 test('workflow mutation endpoints require secure server configuration', async () => {
   const response = await request({ method: 'POST', url: '/api/parent/session-change-requests', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ request_id: crypto.randomUUID(), session_id: crypto.randomUUID(), request_type: 'cancel' }) })
   assert.equal(response.status, 503)

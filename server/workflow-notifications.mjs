@@ -1,4 +1,5 @@
 import { createSupabaseAdminClient, isSupabaseConfigured } from './supabase.mjs'
+import { syncSessionToGoogleCalendar } from './google-calendar.mjs'
 
 const recipient = () => process.env.APPLICATION_RECIPIENT || 'nazar.drygalo@gmail.com'
 const fromAddress = () => process.env.FROM_EMAIL || "Nazar's School of Mathematics <onboarding@resend.dev>"
@@ -128,25 +129,30 @@ export async function saveTutorSession(req, body, sessionId = null) {
   const { data: assignment } = await supabase.from('student_tutor_assignments').select('student_id').eq('student_id', studentId).eq('tutor_id', tutor.id).eq('active', true).maybeSingle()
   if (!assignment) throw Object.assign(new Error('The student is not actively assigned to this tutor.'), { status: 403 })
   const values = { starts_at: new Date(body.starts_at).toISOString(), ends_at: new Date(body.ends_at).toISOString(), meeting_url: clean(body.meeting_url) || null, status: clean(body.status, 30) }
-  let session
-  if (sessionId) {
-    const { data, error } = await supabase.from('tutoring_sessions').update(values).eq('id', sessionId).eq('tutor_id', tutor.id).select('id,student_id,tutor_id,starts_at,ends_at,status,meeting_url').single()
-    if (error) throw Object.assign(new Error('The session changes could not be saved.'), { status: 502 })
-    session = data
-  } else {
-    const { data, error } = await supabase.from('tutoring_sessions').insert({ id: mutationId, student_id: studentId, tutor_id: tutor.id, ...values }).select('id,student_id,tutor_id,starts_at,ends_at,status,meeting_url').single()
-    if (error?.code === '23505') {
-      const { data: existing } = await supabase.from('tutoring_sessions').select('id,student_id,tutor_id,starts_at,ends_at,status,meeting_url').eq('id', mutationId).eq('tutor_id', tutor.id).maybeSingle()
-      if (!existing) throw Object.assign(new Error('The session could not be saved.'), { status: 502 })
-      session = existing
-    } else if (error) throw Object.assign(new Error('The session could not be saved.'), { status: 502 })
-    else session = data
+  const saveId = sessionId || mutationId
+  const { data: session, error: saveError } = await supabase.rpc('save_tutoring_session_server', {
+    p_session_id: saveId,
+    p_student_id: studentId,
+    p_tutor_id: tutor.id,
+    p_starts_at: values.starts_at,
+    p_ends_at: values.ends_at,
+    p_status: values.status,
+    p_meeting_url: values.meeting_url
+  })
+  if (saveError) {
+    const expected = ['overlaps another scheduled session', 'outside the tutor', 'blocked as unavailable', 'not actively assigned']
+    const safeMessage = expected.some(message => saveError.message?.toLowerCase().includes(message))
+      ? saveError.message
+      : 'The session could not be saved. Confirm the tutor-availability migration has been run.'
+    throw Object.assign(new Error(safeMessage), { status: safeMessage === saveError.message ? 409 : 502 })
   }
   const { student, parent } = await familyForStudent(supabase, studentId)
   const action = sessionId ? 'updated' : 'created'
   const email = familySessionEmail({ action, session, student, tutor })
   const delivery = await sendTrackedEmail(supabase, { eventKey: `session:${session.id}:${action}:${mutationId}:parent`, eventType: `session_${action}`, sessionId: session.id, recipientRole: 'parent', to: parent.email, ...email })
-  return { ok: true, session, email: delivery.status, warning: delivery.warning, changed: !previous || JSON.stringify(previous) !== JSON.stringify(session) }
+  const calendar = await syncSessionToGoogleCalendar(supabase, session)
+  const warnings = [delivery.warning, calendar.warning].filter(Boolean)
+  return { ok: true, session, email: delivery.status, calendar: calendar.status, warning: warnings.join(' ') || undefined, changed: !previous || JSON.stringify(previous) !== JSON.stringify(session) }
 }
 
 export async function createSessionChangeRequest(req, body) {
@@ -202,6 +208,7 @@ export async function resolveSessionChangeRequest(req, requestId, body) {
   const base = { eventType: 'change_resolved', sessionId: session.id, changeRequestId: requestId, subject: `Session request ${resolution} | ${student.first_name} ${student.last_name}` }
   const familyDelivery = await sendTrackedEmail(supabase, { ...base, eventKey: `request:${requestId}:resolved:${resolution}:parent`, recipientRole: 'parent', to: parent.email, text: `Hello,\n\nYour ${requestLabel} for ${student.first_name} was ${outcome}\n\nPlease review the parent portal for the current schedule.\n\nNazar's School of Mathematics`, html: `<p>Hello,</p><p>Your ${escapeHtml(requestLabel)} for <strong>${escapeHtml(student.first_name)}</strong> was ${escapeHtml(outcome)}</p><p>Please review the parent portal for the current schedule.</p><p>Nazar's School of Mathematics</p>` })
   const tutorDelivery = tutor?.email ? await sendTrackedEmail(supabase, { ...base, eventKey: `request:${requestId}:resolved:${resolution}:tutor`, recipientRole: 'tutor', to: tutor.email, text: `Hello ${tutor.first_name},\n\nThe ${requestLabel} for ${student.first_name} ${student.last_name} was ${outcome}\n\nPlease review the tutor portal for the current schedule.`, html: `<p>Hello ${escapeHtml(tutor.first_name)},</p><p>The ${escapeHtml(requestLabel)} for <strong>${escapeHtml(student.first_name)} ${escapeHtml(student.last_name)}</strong> was ${escapeHtml(outcome)}</p><p>Please review the tutor portal for the current schedule.</p>` }) : { status: 'failed', warning: 'The tutor has no delivery email.' }
-  const warnings = [familyDelivery.warning, tutorDelivery.warning].filter(Boolean)
-  return { ok: true, resolution, emails: { parent: familyDelivery.status, tutor: tutorDelivery.status }, warning: warnings.join(' ') || undefined }
+  const calendar = resolution === 'approved' ? await syncSessionToGoogleCalendar(supabase, session) : { status: 'unchanged' }
+  const warnings = [familyDelivery.warning, tutorDelivery.warning, calendar.warning].filter(Boolean)
+  return { ok: true, resolution, emails: { parent: familyDelivery.status, tutor: tutorDelivery.status }, calendar: calendar.status, warning: warnings.join(' ') || undefined }
 }

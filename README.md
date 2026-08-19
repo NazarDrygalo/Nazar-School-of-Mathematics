@@ -94,7 +94,11 @@ Then run [`supabase/migrations/20260817_security_hardening.sql`](supabase/migrat
 
 Then run [`supabase/migrations/20260818_admin_mfa.sql`](supabase/migrations/20260818_admin_mfa.sql) and deploy the matching application code immediately afterward. This requires every administrator database query and server API call to use an MFA-authenticated `aal2` session. Parent, student, and tutor accounts continue to use their existing sign-in flow.
 
-Finally, run [`supabase/migrations/20260818170000_portal_onboarding.sql`](supabase/migrations/20260818170000_portal_onboarding.sql). It adds service-role-only, atomic Auth-user linking; idempotent invitation tracking; optional student email storage; administrator-only audit visibility; duplicate record/role protection; and seven-day cleanup of invitation activity. Apply this migration before deploying the matching onboarding UI because the dashboard reads `portal_invitations` immediately.
+Then run [`supabase/migrations/20260818170000_portal_onboarding.sql`](supabase/migrations/20260818170000_portal_onboarding.sql). It adds service-role-only, atomic Auth-user linking; idempotent invitation tracking; optional student email storage; administrator-only audit visibility; duplicate record/role protection; and seven-day cleanup of invitation activity. Apply this migration before deploying the matching onboarding UI because the dashboard reads `portal_invitations` immediately.
+
+Next, run [`supabase/migrations/20260819120000_tutor_availability.sql`](supabase/migrations/20260819120000_tutor_availability.sql). It adds recurring weekly tutor hours, one-off unavailable blocks, and an atomic scheduling function that prevents overlaps and out-of-hours sessions. Apply this migration before deploying the matching tutor dashboard because it reads the new availability tables immediately.
+
+Then run [`supabase/migrations/20260820120000_google_calendar_sync.sql`](supabase/migrations/20260820120000_google_calendar_sync.sql). It adds server-only encrypted Google Calendar connections, single-use OAuth state, and non-sensitive synchronization audit records. Apply it before deploying the calendar controls.
 
 In Supabase Authentication, confirm TOTP multi-factor verification is enabled. The next administrator sign-in displays a QR code and setup key; scan either one with an authenticator app and enter the current six-digit code. Later administrator sign-ins request a fresh six-digit code after the password. If the authenticator device is lost, recover the account through the Supabase administrator console only after verifying the account owner's identity, remove the lost factor, and enroll a new one at the next sign-in.
 
@@ -112,7 +116,7 @@ The example runs daily at 03:17 UTC. Confirm the job under Supabase Dashboard â†
 
 Add `https://nazarschoolofmath.com/portal` to the Supabase Authentication allowed redirect URLs. The administrator portal creates secure one-time setup links only for accepted families and active tutors. The server creates or finds the Auth user, atomically links exactly one operational record and role, then sends the setup link through Resend. Existing users receive a password-reset link rather than a duplicate account.
 
-Parents can view their students, sessions, assignments, and progress. Students can view their own sessions, assignments, and progress. Administrators can activate an accepted student and assign one active tutor from the application detail panel. Tutors can then schedule sessions and create assignments and progress updates only for actively assigned students. Session times are saved as UTC instants and displayed in each viewer's local time zone.
+Parents can view their students, sessions, assignments, and progress. Students can view their own sessions, assignments, and progress. Administrators can activate an accepted student and assign one active tutor from the application detail panel. Tutors can define weekly availability, block one-off unavailable times, schedule sessions, and create assignments and progress updates only for actively assigned students. Session times are saved as UTC instants and displayed in each viewer's local time zone. Once a tutor adds any weekly hours, scheduled sessions must fit one complete window; overlapping sessions and unavailable blocks are always rejected.
 
 Workflow email behavior:
 
@@ -126,7 +130,32 @@ After accepting a family, activate the student and assign an active tutor. The a
 
 For tutors, create and activate the operational tutor record first, then use **Send setup email** in Tutor Administration. Inactive tutors are rejected by both the UI and server. Manual Auth UUID linking is retained only as an emergency recovery procedure; routine onboarding should use the administrator workflow so eligibility, role uniqueness, audit status, and email delivery are enforced together.
 
-Payments, invoicing, and external calendar integrations are intentionally not included yet; they need their own provider accounts, pricing, refund, and scheduling policies before they should be enabled.
+## Google Calendar synchronization
+
+Each active tutor can connect a Google Account from the tutor dashboard. Future scheduled sessions are backfilled at connection time. Later session creation, edits, cancellations, status changes, and approved family rescheduling requests update the tutor's primary Google Calendar automatically. Events are private, use a deterministic ID to prevent duplicates, and include only the student's first name and last initial. Calendar failure never reverses a tutoring workflow; it is recorded and shown in the connection status instead.
+
+Google Cloud setup:
+
+1. Create or select a Google Cloud project and enable the **Google Calendar API**.
+2. Configure the Google Auth Platform branding, audience, privacy-policy URL, terms URL, and data-access scope.
+3. Request only `https://www.googleapis.com/auth/calendar.events.owned`.
+4. Create an OAuth client with application type **Web application**.
+5. Add `https://nazarschoolofmath.com/api/integrations/google-calendar/callback` as an authorized redirect URI. It must match exactly.
+6. Add each tutor's Google Account as a test user while the OAuth application is in Testing.
+7. Add the four server-only variables below to Render, apply the migration, deploy, and connect from `/tutor`.
+
+```env
+GOOGLE_CALENDAR_CLIENT_ID=...
+GOOGLE_CALENDAR_CLIENT_SECRET=...
+GOOGLE_CALENDAR_TOKEN_ENCRYPTION_KEY=...
+GOOGLE_CALENDAR_REDIRECT_URI=https://nazarschoolofmath.com/api/integrations/google-calendar/callback
+```
+
+Generate the encryption key once with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. Store it permanently in Render and never rotate or remove it without first disconnecting every calendar, because existing refresh tokens cannot be decrypted with a different key. Never prefix any of these variables with `VITE_`.
+
+An External OAuth application left in Google's Testing status issues Calendar refresh tokens that expire after seven days. This is acceptable for initial testing, but tutors must reconnect weekly until the application is published or otherwise moved to an appropriate production configuration. The integration handles revoked or expired tokens as a visible synchronization error and never exposes them to browser code.
+
+Payments and invoicing are intentionally not included; the school handles them through direct personal arrangements.
 
 ## Editing business content
 

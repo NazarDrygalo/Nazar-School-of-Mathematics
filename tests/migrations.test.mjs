@@ -61,3 +61,26 @@ test('administrator database access requires an MFA-authenticated session', asyn
   assert.match(sql, /= 'aal2'/)
   assert.match(sql, /role = 'admin'/)
 })
+
+test('tutor availability enforces weekly hours, blocks, and atomic conflict checks', async () => {
+  const sql = await migration('20260819120000_tutor_availability.sql')
+  assert.match(sql, /create table if not exists public\.tutor_availability_rules/)
+  assert.match(sql, /create table if not exists public\.tutor_unavailable_blocks/)
+  assert.match(sql, /pg_advisory_xact_lock/)
+  assert.match(sql, /tstzrange\(ts\.starts_at, ts\.ends_at, '\[\)'\).*&&.*tstzrange\(checked_starts_at, checked_ends_at, '\[\)'\)/s)
+  assert.match(sql, /outside the tutor''s recurring availability/)
+  assert.match(sql, /save_tutoring_session_server/)
+  assert.match(sql, /resolve_session_change_request_server/)
+  assert.match(sql, /grant execute on function public\.save_tutoring_session_server.*to service_role/)
+})
+
+test('Google Calendar credentials remain server-only with single-use OAuth state', async () => {
+  const sql = await migration('20260820120000_google_calendar_sync.sql')
+  assert.match(sql, /create table if not exists public\.google_calendar_connections/)
+  assert.match(sql, /encrypted_refresh_token text not null/)
+  assert.match(sql, /create table if not exists public\.google_calendar_oauth_states/)
+  assert.match(sql, /used_at is null and expires_at > now\(\)/)
+  assert.match(sql, /revoke all on public\.google_calendar_connections, public\.google_calendar_oauth_states/)
+  assert.match(sql, /claim_google_calendar_oauth_state/)
+  assert.match(sql, /auth\.role\(\) <> 'service_role'/)
+})

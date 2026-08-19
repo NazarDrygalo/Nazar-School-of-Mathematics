@@ -13,6 +13,8 @@ Existing projects that already have the first five migrations should run the rem
 5. [`supabase/migrations/20260817_security_hardening.sql`](supabase/migrations/20260817_security_hardening.sql)
 6. [`supabase/migrations/20260818_admin_mfa.sql`](supabase/migrations/20260818_admin_mfa.sql)
 7. [`supabase/migrations/20260818170000_portal_onboarding.sql`](supabase/migrations/20260818170000_portal_onboarding.sql)
+8. [`supabase/migrations/20260819120000_tutor_availability.sql`](supabase/migrations/20260819120000_tutor_availability.sql)
+9. [`supabase/migrations/20260820120000_google_calendar_sync.sql`](supabase/migrations/20260820120000_google_calendar_sync.sql)
 
 For a new Supabase project, run the complete order:
 
@@ -28,6 +30,8 @@ For a new Supabase project, run the complete order:
 10. `20260817_security_hardening.sql`
 11. `20260818_admin_mfa.sql`
 12. `20260818170000_portal_onboarding.sql`
+13. `20260819120000_tutor_availability.sql`
+14. `20260820120000_google_calendar_sync.sql`
 
 Afterward, run the checks in `supabase/RLS_VERIFICATION.md` with disposable test records.
 
@@ -60,6 +64,10 @@ Confirm these values exist in Render and are not exposed through `VITE_` variabl
 - `VITE_SUPABASE_PUBLISHABLE_KEY`
 - `VITE_TURNSTILE_SITE_KEY`
 - `TURNSTILE_SECRET_KEY`
+- `GOOGLE_CALENDAR_CLIENT_ID`
+- `GOOGLE_CALENDAR_CLIENT_SECRET`
+- `GOOGLE_CALENDAR_TOKEN_ENCRYPTION_KEY`
+- `GOOGLE_CALENDAR_REDIRECT_URI`
 
 Also set `PUBLIC_SITE_ORIGIN=https://nazarschoolofmath.com`. `RATE_LIMIT_SECRET` is optional; when omitted, the server uses the server-only Supabase service-role key to create irreversible rate-limit hashes.
 
@@ -86,11 +94,16 @@ Check desktop and mobile layouts at minimum on Home, Resources, Apply, Portal Lo
 - Send parent and student portal setup emails from the accepted-family panel; confirm each recipient can create a password and reaches only the correct portal.
 - Retry one setup email and confirm the existing Auth user is linked instead of duplicated.
 - Send an active tutor's setup email from Tutor Administration and confirm an inactive tutor cannot be invited.
-- Schedule and edit a session as the tutor.
+- Add at least one weekly availability window and one future unavailable block as the tutor.
+- Connect the tutor's Google Calendar and confirm the dashboard reports it as connected.
+- Schedule and edit a session inside availability, then confirm overlapping, blocked, and out-of-hours sessions are rejected.
+- Confirm the scheduled event appears once in the tutor's primary Google Calendar, edits move it, and cancellation removes it.
 - Confirm the session appears with correct local time for parent and student.
 - Submit a parent rescheduling request more than three days before the lesson.
 - Confirm a request inside three days is rejected.
 - Approve the valid request as admin and confirm the session time changes without changing its duration.
+- Confirm an administrator cannot approve a requested time that conflicts with the tutor's availability.
+- Approve a valid requested time and confirm the existing Google event moves instead of creating a duplicate.
 - Test password recovery with a disposable portal account.
 - Confirm each role cannot access another family's or tutor's records.
 
