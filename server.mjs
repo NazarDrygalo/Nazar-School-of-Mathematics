@@ -1,6 +1,6 @@
 import { createServer } from 'node:http'
 import { createHmac, randomBytes } from 'node:crypto'
-import { createReadStream, existsSync, readFileSync } from 'node:fs'
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
 import { extname, isAbsolute, join, normalize, relative } from 'node:path'
 import { createSupabaseAdminClient, isSupabaseConfigured } from './server/supabase.mjs'
 import { createSessionChangeRequest, resolveSessionChangeRequest, saveTutorSession } from './server/workflow-notifications.mjs'
@@ -19,7 +19,7 @@ const port = Number(process.env.PORT || 3000)
 const dist = join(process.cwd(), 'dist')
 const recentRequests = new Map()
 const recipient = process.env.APPLICATION_RECIPIENT || 'nazar.drygalo@gmail.com'
-const contentTypes = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' }
+const contentTypes = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.txt': 'text/plain; charset=utf-8', '.xml': 'application/xml; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json' }
 const routeSeo = {
   '/': { title: 'Nazar’s School of Mathematics | Online Tutoring for Middle School–11th Grade', description: 'Personalized online mathematics tutoring for students in middle school through 11th grade.' },
   '/math': { title: 'Tutoring Information | Nazar’s School of Mathematics', description: 'Learn how online, one-to-one mathematics tutoring works for middle school through 11th grade.' },
@@ -35,6 +35,7 @@ const routeSeo = {
   '/student': { title: 'Student Dashboard | Nazar’s School of Mathematics', description: 'Secure student portal.', private: true },
   '/tutor': { title: 'Tutor Dashboard | Nazar’s School of Mathematics', description: 'Secure tutor portal.', private: true }
 }
+const notFoundSeo = { title: 'Page Not Found | Nazar’s School of Mathematics', description: 'The requested page could not be found.', private: true }
 
 const siteOrigin = process.env.PUBLIC_SITE_ORIGIN || 'https://nazarschoolofmath.com'
 const allowedOrigins = new Set([siteOrigin, `http://localhost:${port}`, `http://127.0.0.1:${port}`])
@@ -65,9 +66,8 @@ function writeHead(res, status, headers = {}, nonce = '') {
 
 export function renderIndexHtml(source, requestPath = '/', nonce = '') {
   const normalizedPath = requestPath.replace(/\/+$/, '') || '/'
-  const seoPath = routeSeo[normalizedPath] ? normalizedPath : '/'
-  const details = routeSeo[seoPath]
-  const canonicalUrl = `https://nazarschoolofmath.com${seoPath === '/' ? '/' : seoPath}`
+  const details = routeSeo[normalizedPath] || notFoundSeo
+  const canonicalUrl = `https://nazarschoolofmath.com${normalizedPath === '/' ? '/' : normalizedPath}`
   const replacements = [
     [/(<title>)[\s\S]*?(<\/title>)/, details.title],
     [/(<meta name="description" content=")[^"]*(" \/>)/, details.description],
@@ -97,7 +97,7 @@ function isValidApplication(data) {
   if (!['Math', 'Science', 'Essay Writing'].includes(clean(data.serviceArea))) return 'Please select Math, Science, or Essay Writing.'
   if (!['Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11'].includes(clean(data.grade))) return 'Please select a grade from 6 through 11.'
   if (clean(data.gender) && !['Female', 'Male'].includes(clean(data.gender))) return 'Please select Female or Male for gender.'
-  if (!/^([1-9]|1[0-9]|20)$/.test(clean(data.age))) return 'Please enter a valid student age.'
+  if (!/^(1[0-9]|20)$/.test(clean(data.age))) return 'Please enter a student age from 10 through 20.'
   return null
 }
 function buildEmail(data) {
@@ -442,14 +442,15 @@ export async function requestHandler(req, res) {
   } catch {
     return sendJson(res, 400, { error: 'The request URL is malformed.' })
   }
-  const requested = req.url === '/' ? '/index.html' : requestedPath
+  const requested = requestedPath === '/' ? '/index.html' : requestedPath
   const candidate = normalize(join(dist, requested))
   const safePath = !relative(dist, candidate).startsWith('..') && !isAbsolute(relative(dist, candidate)) ? candidate : join(dist, 'index.html')
-  const file = existsSync(safePath) ? safePath : join(dist, 'index.html')
+  const file = existsSync(safePath) && statSync(safePath).isFile() ? safePath : join(dist, 'index.html')
   if (file === join(dist, 'index.html')) {
     const nonce = randomBytes(16).toString('base64')
     const html = renderIndexHtml(readFileSync(file, 'utf8'), requestedPath, nonce)
-    writeHead(res, 200, { 'Content-Type': contentTypes['.html'] }, nonce)
+    const status = routeSeo[requestedPath.replace(/\/+$/, '') || '/'] ? 200 : 404
+    writeHead(res, status, { 'Content-Type': contentTypes['.html'], 'Cache-Control': 'no-cache' }, nonce)
     return res.end(req.method === 'HEAD' ? undefined : html)
   }
   writeHead(res, 200, { 'Content-Type': contentTypes[extname(file)] || 'application/octet-stream' })

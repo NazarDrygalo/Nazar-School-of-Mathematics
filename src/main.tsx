@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ChangeEvent, type FormEvent, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { site } from './content'
 import { AdminDashboard, PortalLogin } from './Portal'
@@ -23,20 +23,32 @@ const pageDetails: Record<Page, { title: string; description: string }> = {
   student: { title: 'Student Dashboard | Nazar’s School of Mathematics', description: 'Secure student portal.' },
   tutor: { title: 'Tutor Dashboard | Nazar’s School of Mathematics', description: 'Secure tutor portal.' },
   privacy: { title: 'Privacy Notice | Nazar’s School of Mathematics', description: 'Privacy notice for Nazar’s School of Mathematics.' },
-  terms: { title: 'Terms of Use | Nazar’s School of Mathematics', description: 'Terms of use for Nazar’s School of Mathematics.' }
+  terms: { title: 'Terms of Use | Nazar’s School of Mathematics', description: 'Terms of use for Nazar’s School of Mathematics.' },
+  'not-found': { title: 'Page Not Found | Nazar’s School of Mathematics', description: 'The requested page could not be found.' }
 }
 
 normalizeLegacyRoute()
 
-function Link({ to, children, className = '' }: { to: Page; children: ReactNode; className?: string }) {
+function Link({ to, children, className = '', current = false }: { to: Page; children: ReactNode; className?: string; current?: boolean }) {
   function follow(event: MouseEvent<HTMLAnchorElement>) {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
     event.preventDefault()
     navigateTo(to)
   }
-  return <a className={className} href={pagePaths[to]} onClick={follow}>{children}</a>
+  return <a className={className} href={pagePaths[to]} onClick={follow} aria-current={current ? 'page' : undefined}>{children}</a>
 }
-function Header({ page }: { page: Page }) { const [open, setOpen] = useState(false); useEffect(() => setOpen(false), [page]); const links: [Page, string][] = [['home', 'Home'], ['information', 'Math'], ['academic-support', 'Science and Essay Writing'], ['resources', 'Resources'], ['apply', 'Apply'], ['contact', 'Contact']]; return <header className="site-header"><div className="nav-wrap"><Link to="home" className="brand"><span className="brand-mark" aria-hidden="true">N</span><span>{site.name}<small>Online Mathematics Tutoring</small></span></Link><button className="menu-button" aria-label={open ? 'Close navigation' : 'Open navigation'} aria-expanded={open} onClick={() => setOpen(!open)}><i></i><i></i><i></i></button><nav className={open ? 'open' : ''} aria-label="Primary navigation">{links.map(([to, label]) => <Link key={to} to={to} className={page === to ? 'active' : ''}>{label}</Link>)}<Link to="portal" className="portal-link">Portal Login</Link><Link to="apply" className="button button-small">Apply Now</Link></nav></div></header> }
+function Header({ page }: { page: Page }) {
+  const [open, setOpen] = useState(false)
+  useEffect(() => setOpen(false), [page])
+  const links: [Page, string][] = [['home', 'Home'], ['information', 'Math'], ['academic-support', 'Science and Essay Writing'], ['resources', 'Resources'], ['apply', 'Apply'], ['contact', 'Contact']]
+  function closeOnEscape(event: KeyboardEvent<HTMLElement>) {
+    if (event.key === 'Escape' && open) {
+      setOpen(false)
+      document.querySelector<HTMLButtonElement>('.menu-button')?.focus()
+    }
+  }
+  return <header className="site-header" onKeyDown={closeOnEscape}><div className="nav-wrap"><Link to="home" className="brand"><span className="brand-mark" aria-hidden="true">N</span><span>{site.name}<small>Online Mathematics Tutoring</small></span></Link><button type="button" className="menu-button" aria-label={open ? 'Close navigation' : 'Open navigation'} aria-expanded={open} aria-controls="primary-navigation" onClick={() => setOpen(!open)}><i></i><i></i><i></i></button><nav id="primary-navigation" className={open ? 'open' : ''} aria-label="Primary navigation">{links.map(([to, label]) => <Link key={to} to={to} className={page === to ? 'active' : ''} current={page === to}>{label}</Link>)}<Link to="portal" className="portal-link" current={page === 'portal'}>Portal Login</Link><Link to="apply" className="button button-small">Apply Now</Link></nav></div></header>
+}
 function Footer() { return <footer><div className="footer-wrap"><div><strong>{site.name}</strong><p>Online Mathematics Tutoring for {site.grades}</p></div><div className="footer-links"><Link to="home">Home</Link><Link to="information">Math</Link><Link to="academic-support">Science and Essay Writing</Link><Link to="resources">Resources</Link><Link to="apply">Apply</Link><Link to="contact">Contact</Link><Link to="privacy">Privacy</Link><Link to="terms">Terms</Link></div><address><a href={`mailto:${site.email}`}>{site.email}</a><a href={site.phoneHref}>{site.phoneDisplay}</a></address></div><div className="copyright">© {new Date().getFullYear()} {site.name}. All rights reserved.</div></footer> }
 function SectionTitle({ eyebrow, title, children }: { eyebrow?: string; title: string; children?: ReactNode }) { return <div className="section-title">{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h2>{title}</h2>{children && <p>{children}</p>}</div> }
 function Feature({ number, title, children }: { number: string; title: string; children: ReactNode }) { return <article className="feature"><span>{number}</span><h3>{title}</h3><p>{children}</p></article> }
@@ -55,12 +67,15 @@ function Apply() {
   if (status === 'success' || status === 'success_with_warning') return <section className="confirmation"><p className="eyebrow">Application received</p><h1>Thank you for getting in touch.</h1><p>Your application has been submitted for review. A parent or guardian will be contacted using the information provided.</p>{warning && <p className="form-error" role="status"><b>Submission saved.</b> {warning}</p>}<Link to="home" className="button">Return home</Link></section>
   return <><section className="page-hero apply-head"><p className="eyebrow">Application</p><h1>Apply for tutoring.</h1><p>Share a little about your student. Submitted information will be reviewed, and a parent or guardian will be contacted.</p></section><section className="form-section"><form onSubmit={submit} noValidate><p className="form-note"><span aria-hidden="true">*</span> Required fields are marked. Please do not include highly sensitive information.</p>{status === 'error' && <div className="form-error" role="alert"><b>Application not sent.</b> {error}</div>}<fieldset><legend>Tutoring area</legend><div className="form-grid"><Field label="What kind of tutoring is the student seeking?" name="serviceArea" required><select id="field-serviceArea" name="serviceArea" value={data.serviceArea} onChange={update} required><option value="">Select an area</option><option>Math</option><option>Science</option><option>Essay Writing</option></select></Field></div></fieldset><fieldset><legend>Student information</legend><div className="form-grid two"><Field label="Student first name" name="studentFirstName" required><input id="field-studentFirstName" name="studentFirstName" value={data.studentFirstName} onChange={update} required /></Field><Field label="Student last name" name="studentLastName" required><input id="field-studentLastName" name="studentLastName" value={data.studentLastName} onChange={update} required /></Field><Field label="Age" name="age" required><input id="field-age" name="age" type="number" min="10" max="20" value={data.age} onChange={update} required /></Field><Field label="Gender" name="gender" required><select id="field-gender" name="gender" value={data.gender} onChange={update} required><option value="">Select an option</option><option>Female</option><option>Male</option></select></Field><Field label="Current grade" name="grade" required><select id="field-grade" name="grade" value={data.grade} onChange={update} required><option value="">Select grade</option>{['6', '7', '8', '9', '10', '11'].map(g => <option key={g}>Grade {g}</option>)}</select></Field><Field label="Current subject" name="currentCourse" required><input id="field-currentCourse" name="currentCourse" value={data.currentCourse} onChange={update} required placeholder="For example, Geometry or Biology" /></Field></div></fieldset><fieldset><legend>Parent or guardian information</legend><div className="form-grid two"><Field label="Parent or guardian first name" name="parentFirstName" required><input id="field-parentFirstName" name="parentFirstName" value={data.parentFirstName} onChange={update} required /></Field><Field label="Parent or guardian last name" name="parentLastName" required><input id="field-parentLastName" name="parentLastName" value={data.parentLastName} onChange={update} required /></Field><Field label="Email address" name="email" required><input id="field-email" name="email" type="email" autoComplete="email" value={data.email} onChange={update} required /></Field></div></fieldset><div className="honeypot" aria-hidden="true"><label htmlFor="field-website">Website</label><input id="field-website" name="website" tabIndex={-1} autoComplete="off" value={data.website} onChange={update} /></div><Turnstile resetKey={turnstileReset} onToken={setTurnstileToken} onError={() => { setTurnstileToken(''); setStatus('error'); setError('Automated submission verification could not load. Check your connection or contact the school directly.') }} /><button className="button submit" disabled={status === 'sending' || !turnstileToken}>{status === 'sending' ? 'Submitting application…' : 'Submit Application'}</button></form></section></> }
 function Contact() { return <><section className="page-hero contact-head"><p className="eyebrow">Contact</p><h1>Questions are welcome.</h1><p>Get in touch with Nazar’s School of Mathematics to ask about tutoring or the application process.</p></section><section className="contact-section"><div className="contact-card"><h2>{site.name}</h2><p>Online Mathematics Tutoring for {site.grades}</p><address><span>Email</span><a href={`mailto:${site.email}`}>{site.email}</a><a href={`mailto:${site.academicSupport.email}`}>{site.academicSupport.email} (Science and Essay Writing)</a><span>Phone</span><a href={site.phoneHref}>{site.phoneDisplay}</a></address><Link to="apply" className="button">Apply for Tutoring</Link></div><div className="contact-copy"><h2>Start with your student’s needs.</h2><p>Whether you have a question about subject availability, scheduling, or the application process, please reach out. Including the student’s grade and current course will help make the conversation more useful.</p><p>For application-related questions, email is the best place to begin.</p></div></section></> }
+function NotFound() { return <section className="confirmation not-found"><p className="eyebrow">404 · Page not found</p><h1>We couldn’t find that page.</h1><p>The address may be incorrect or the page may have moved.</p><Link to="home" className="button">Return home</Link></section> }
 function setMeta(selector: string, content: string) {
   document.querySelector<HTMLMetaElement>(selector)?.setAttribute('content', content)
 }
 
 function App() {
   const [page, setPage] = useState<Page>(currentPage())
+  const mainRef = useRef<HTMLElement>(null)
+  const firstRender = useRef(true)
   useEffect(() => {
     const update = () => setPage(currentPage())
     window.addEventListener('popstate', update)
@@ -73,20 +88,22 @@ function App() {
   useEffect(() => {
     const details = pageDetails[page]
     const privatePage = ['portal', 'admin', 'parent', 'student', 'tutor'].includes(page)
-    const canonicalUrl = new URL(pagePaths[page], location.origin).href
+    const canonicalUrl = new URL(page === 'not-found' ? location.pathname : pagePaths[page], location.origin).href
     document.title = details.title
     document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.setAttribute('href', canonicalUrl)
     setMeta('meta[name="description"]', details.description)
-    setMeta('meta[name="robots"]', privatePage ? 'noindex, nofollow' : 'index, follow')
+    setMeta('meta[name="robots"]', privatePage || page === 'not-found' ? 'noindex, nofollow' : 'index, follow')
     setMeta('meta[property="og:title"]', details.title)
     setMeta('meta[property="og:description"]', details.description)
     setMeta('meta[property="og:url"]', canonicalUrl)
     setMeta('meta[name="twitter:title"]', details.title)
     setMeta('meta[name="twitter:description"]', details.description)
     window.scrollTo(0, 0)
+    if (firstRender.current) firstRender.current = false
+    else mainRef.current?.focus()
   }, [page])
   const privatePage = ['portal', 'admin', 'parent', 'student', 'tutor'].includes(page)
-  return <><Header page={page}/><main>{page === 'home' && <Home/>}{page === 'information' && <Information/>}{page === 'academic-support' && <AcademicSupport/>}{page === 'resources' && <Resources/>}{page === 'apply' && <Apply/>}{page === 'contact' && <Contact/>}{page === 'privacy' && <Privacy/>}{page === 'terms' && <Terms/>}{page === 'portal' && <PortalLogin/>}{page === 'admin' && <AdminDashboard/>}{page === 'parent' && <ParentDashboard/>}{page === 'student' && <StudentDashboard/>}{page === 'tutor' && <TutorDashboard/>}</main>{!privatePage && <Footer/>}</>
+  return <><Header page={page}/><main ref={mainRef} tabIndex={-1}>{page === 'home' && <Home/>}{page === 'information' && <Information/>}{page === 'academic-support' && <AcademicSupport/>}{page === 'resources' && <Resources/>}{page === 'apply' && <Apply/>}{page === 'contact' && <Contact/>}{page === 'privacy' && <Privacy/>}{page === 'terms' && <Terms/>}{page === 'portal' && <PortalLogin/>}{page === 'admin' && <AdminDashboard/>}{page === 'parent' && <ParentDashboard/>}{page === 'student' && <StudentDashboard/>}{page === 'tutor' && <TutorDashboard/>}{page === 'not-found' && <NotFound/>}</main>{!privatePage && <Footer/>}</>
 }
 
 createRoot(document.getElementById('root')!).render(<App />)

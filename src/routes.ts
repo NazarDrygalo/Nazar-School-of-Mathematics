@@ -1,4 +1,4 @@
-export type Page = 'home' | 'information' | 'apply' | 'contact' | 'academic-support' | 'resources' | 'portal' | 'admin' | 'parent' | 'student' | 'tutor' | 'privacy' | 'terms'
+export type Page = 'home' | 'information' | 'apply' | 'contact' | 'academic-support' | 'resources' | 'portal' | 'admin' | 'parent' | 'student' | 'tutor' | 'privacy' | 'terms' | 'not-found'
 
 export const pagePaths: Record<Page, string> = {
   home: '/',
@@ -13,7 +13,8 @@ export const pagePaths: Record<Page, string> = {
   student: '/student',
   tutor: '/tutor',
   privacy: '/privacy',
-  terms: '/terms'
+  terms: '/terms',
+  'not-found': '/404'
 }
 
 const pages = Object.keys(pagePaths) as Page[]
@@ -32,7 +33,7 @@ function legacyHashPage(): Page | null {
 
 export function currentPage(): Page {
   if (location.hash.includes('type=recovery')) return 'portal'
-  return legacyHashPage() || pathPages.get(normalizedPath()) || 'home'
+  return legacyHashPage() || pathPages.get(normalizedPath()) || 'not-found'
 }
 
 export function normalizeLegacyRoute() {

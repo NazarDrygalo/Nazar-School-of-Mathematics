@@ -23,9 +23,12 @@ test('sitemap lists clean public routes and excludes private portals', async () 
 })
 
 test('robots rules protect portal routes and mobile controls have touch-sized targets', async () => {
-  const [robots, styles] = await Promise.all([read('public/robots.txt'), read('src/styles.css')])
+  const [robots, styles, main] = await Promise.all([read('public/robots.txt'), read('src/styles.css'), read('src/main.tsx')])
   for (const path of ['/admin', '/parent', '/student', '/tutor', '/portal']) assert.match(robots, new RegExp(`Disallow: ${path}`))
   assert.match(styles, /nav>a:not\(\.button\).*min-height:44px/)
   assert.match(styles, /\.footer-links a,footer address a.*min-height:44px/)
+  assert.match(styles, /a:focus-visible,button:focus-visible,summary:focus-visible/)
+  assert.match(main, /aria-controls="primary-navigation"/)
+  assert.match(main, /event\.key === 'Escape'/)
 })
 

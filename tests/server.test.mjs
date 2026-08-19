@@ -21,7 +21,8 @@ function request({ method = 'GET', url = '/', headers = {}, body = '' }) {
       if (chunk) chunks.push(Buffer.from(chunk))
       originalEnd()
       const text = Buffer.concat(chunks).toString('utf8')
-      resolve({ status: res.statusCode, headers: res.headers || {}, body: text ? JSON.parse(text) : null })
+      const isJson = String(res.headers?.['Content-Type'] || '').startsWith('application/json')
+      resolve({ status: res.statusCode, headers: res.headers || {}, body: text ? (isJson ? JSON.parse(text) : text) : null })
       return res
     }
     Promise.resolve(requestHandler(req, res)).catch(reject)
@@ -50,6 +51,13 @@ test('administrator endpoint refuses to operate when secure server configuration
   const response = await request({ method: 'PATCH', url: '/api/admin/applications/00000000-0000-4000-8000-000000000000/status', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: 'accepted' }) })
   assert.equal(response.status, 503)
   assert.match(response.body.error, /not configured/i)
+})
+
+test('application endpoint enforces the same student age range as the public form', async () => {
+  const body = { serviceArea: 'Math', studentFirstName: 'Test', studentLastName: 'Student', age: '9', gender: 'Female', grade: 'Grade 6', currentCourse: 'Math', parentFirstName: 'Test', parentLastName: 'Parent', email: 'parent@example.com' }
+  const response = await request({ method: 'POST', url: '/api/application', headers: { 'content-type': 'application/json', 'x-request-id': crypto.randomUUID() }, body: JSON.stringify(body) })
+  assert.equal(response.status, 400)
+  assert.match(response.body.error, /10 through 20/i)
 })
 
 test('application endpoint requires JSON and rejects unauthorized browser origins', async () => {
@@ -141,4 +149,27 @@ test('clean routes receive route-specific canonical and indexing metadata', () =
 test('structured data receives the CSP nonce used for rendered HTML', () => {
   const rendered = renderIndexHtml('<script type="application/ld+json">{}</script>', '/', 'test-nonce')
   assert.match(rendered, /type="application\/ld\+json" nonce="test-nonce"/)
+})
+
+test('unknown pages return a real 404 with noindex metadata', async () => {
+  const response = await request({ url: '/not-a-real-page' })
+  assert.equal(response.status, 404)
+  assert.match(response.body, /Page Not Found/)
+  assert.match(response.body, /robots" content="noindex, nofollow"/)
+  assert.equal(response.headers['Cache-Control'], 'no-cache')
+})
+
+test('homepage query strings serve the app instead of the build directory', async () => {
+  const response = await request({ url: '/?utm_source=test' })
+  assert.equal(response.status, 200)
+  assert.match(response.body, /Nazar’s School of Mathematics/)
+})
+
+test('search-engine files use their correct content types', async () => {
+  const robots = await request({ url: '/robots.txt' })
+  const sitemap = await request({ url: '/sitemap.xml' })
+  assert.equal(robots.status, 200)
+  assert.match(robots.headers['Content-Type'], /^text\/plain/)
+  assert.equal(sitemap.status, 200)
+  assert.match(sitemap.headers['Content-Type'], /^application\/xml/)
 })
