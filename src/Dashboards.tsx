@@ -42,7 +42,7 @@ export function ParentDashboard() {
       supabase.from('parents').select('first_name,last_name').maybeSingle(),
       supabase.from('students').select('id,first_name,last_name,grade,current_course').order('first_name'),
       supabase.from('tutoring_sessions').select('id,starts_at,ends_at,status,meeting_url,students(first_name,last_name),tutors(first_name,last_name)').order('starts_at'),
-      supabase.from('assignments').select('id,title,instructions,due_at,status,students(first_name,last_name)').order('due_at'),
+      supabase.from('assignments').select('id,title,instructions,due_at,status,submitted_at,reviewed_at,students(first_name,last_name)').order('due_at'),
       supabase.from('student_progress').select('id,area,mastery_level,notes,recorded_at,students(first_name,last_name)').order('recorded_at', { ascending: false }),
       supabase.from('session_parent_summaries').select('session_id,summary,updated_at,tutoring_sessions(starts_at,students(first_name,last_name))').order('updated_at', { ascending: false }),
       supabase.from('session_change_requests').select('id,session_id,request_type,requested_starts_at,status,created_at,tutoring_sessions(starts_at,students(first_name,last_name))').order('created_at', { ascending: false })
@@ -83,9 +83,43 @@ export function ParentDashboard() {
 }
 
 export function StudentDashboard() {
-  const [data, setData] = useState<RecordItem>({ sessions: [], assignments: [], progress: [] }); const [error, setError] = useState('')
-  useEffect(() => { void (async () => { if (!supabase) return setError('Portal access is not configured.'); if (!await hasPortalRole('student')) return setError('A student portal account is required.'); const [student, sessions, assignments, progress] = await Promise.all([supabase.from('students').select('first_name,last_name,grade,current_course').maybeSingle(), supabase.from('tutoring_sessions').select('id,starts_at,ends_at,status,meeting_url,tutors(first_name,last_name)').order('starts_at'), supabase.from('assignments').select('id,title,instructions,due_at,status').order('due_at'), supabase.from('student_progress').select('id,area,mastery_level,notes,recorded_at').order('recorded_at', { ascending: false })]); const failed = [student, sessions, assignments, progress].find(result => result.error); if (failed?.error) return setError('We could not load this portal. Please try again.'); setData({ student: student.data, sessions: sessions.data || [], assignments: assignments.data || [], progress: progress.data || [] }) })() }, [])
-  return <Shell title={`Student Dashboard${data.student ? ` — ${data.student.first_name}` : ''}`}>{error && <Notice>{error}</Notice>}<div className="portal-grid"><List title="Sessions" items={data.sessions} render={session => <article key={session.id}><b>{displaySessionTime(session.starts_at, session.ends_at)}</b><span>{session.tutors?.first_name} {session.tutors?.last_name} · {session.status}</span>{session.meeting_url && <a href={session.meeting_url} target="_blank" rel="noreferrer">Join online session</a>}</article>} /><List title="Assignments" items={data.assignments} render={assignment => <article key={assignment.id}><b>{assignment.title}</b><span>{assignment.status} · {assignment.due_at ? `Due ${displayDate(assignment.due_at)}` : 'No due date'}</span><small>{assignment.instructions || 'No additional instructions.'}</small></article>} /><List title="Progress" items={data.progress} render={entry => <article key={entry.id}><b>{entry.area}</b><span>Mastery {entry.mastery_level || '—'}/5</span><small>{entry.notes || 'No notes provided.'}</small></article>} /></div></Shell>
+  const [data, setData] = useState<RecordItem>({ sessions: [], assignments: [], progress: [] })
+  const [error, setError] = useState(''); const [message, setMessage] = useState(''); const [busy, setBusy] = useState(false)
+
+  async function load() {
+    if (!supabase) return setError('Portal access is not configured.')
+    if (!await hasPortalRole('student')) { setError('A student portal account is required.'); return }
+    const [student, sessions, assignments, progress] = await Promise.all([
+      supabase.from('students').select('first_name,last_name,grade,current_course').maybeSingle(),
+      supabase.from('tutoring_sessions').select('id,starts_at,ends_at,status,meeting_url,tutors(first_name,last_name)').order('starts_at'),
+      supabase.from('assignments').select('id,title,instructions,due_at,status,submitted_at,reviewed_at').order('due_at'),
+      supabase.from('student_progress').select('id,area,mastery_level,notes,recorded_at').order('recorded_at', { ascending: false })
+    ])
+    const failed = [student, sessions, assignments, progress].find(result => result.error)
+    if (failed?.error) return setError('We could not load this portal. Confirm the assignment-workflow migration has been run, then try again.')
+    setData({ student: student.data, sessions: sessions.data || [], assignments: assignments.data || [], progress: progress.data || [] })
+  }
+
+  useEffect(() => { void load() }, [])
+
+  async function submitAssignment(id: string) {
+    if (!supabase || busy) return
+    setBusy(true); setError(''); setMessage('')
+    const result = await supabase.rpc('transition_assignment_status', { target_assignment_id: id, next_status: 'submitted' })
+    setBusy(false)
+    if (result.error) return setError('The assignment could not be submitted. Confirm it is still assigned to you and try again.')
+    setMessage('Assignment submitted for tutor review.')
+    await load()
+  }
+
+  return <Shell title={`Student Dashboard${data.student ? ` — ${data.student.first_name}` : ''}`}>
+    {error && <Notice>{error}</Notice>}{message && <Notice>{message}</Notice>}
+    <div className="portal-grid">
+      <List title="Sessions" items={data.sessions} render={session => <article key={session.id}><b>{displaySessionTime(session.starts_at, session.ends_at)}</b><span>{session.tutors?.first_name} {session.tutors?.last_name} · {session.status}</span>{session.meeting_url && <a href={session.meeting_url} target="_blank" rel="noreferrer">Join online session</a>}</article>} />
+      <List title="Assignments" items={data.assignments} render={assignment => <article key={assignment.id}><b>{assignment.title}</b><span>{assignment.status} · {assignment.due_at ? `Due ${displayDate(assignment.due_at)}` : 'No due date'}</span><small>{assignment.instructions || 'No additional instructions.'}</small>{assignment.status === 'assigned' && <div className="assignment-actions"><button type="button" className="remove-button" disabled={busy} onClick={() => void submitAssignment(assignment.id)}>Mark complete</button></div>}{assignment.status === 'submitted' && <small>Submitted {displayDate(assignment.submitted_at)} · Awaiting tutor review</small>}{assignment.status === 'reviewed' && <small>Reviewed {displayDate(assignment.reviewed_at)}</small>}</article>} />
+      <List title="Progress" items={data.progress} render={entry => <article key={entry.id}><b>{entry.area}</b><span>Mastery {entry.mastery_level || '—'}/5</span><small>{entry.notes || 'No notes provided.'}</small></article>} />
+    </div>
+  </Shell>
 }
 
 export function TutorDashboard() {
@@ -107,7 +141,7 @@ export function TutorDashboard() {
       supabase.from('tutors').select('id,first_name,last_name').maybeSingle(),
       supabase.from('student_tutor_assignments').select('student_id,students(id,first_name,last_name,grade,current_course)').eq('active', true),
       supabase.from('tutoring_sessions').select('id,student_id,starts_at,ends_at,status,meeting_url,students(first_name,last_name)').order('starts_at'),
-      supabase.from('assignments').select('id,title,instructions,due_at,status,students(first_name,last_name)').order('created_at', { ascending: false }),
+      supabase.from('assignments').select('id,title,instructions,due_at,status,submitted_at,reviewed_at,students(first_name,last_name)').order('created_at', { ascending: false }),
       supabase.from('student_progress').select('id,area,mastery_level,notes,recorded_at,students(first_name,last_name)').order('recorded_at', { ascending: false }),
       supabase.from('tutor_availability_rules').select('id,weekday,start_time,end_time,timezone').order('weekday').order('start_time'),
       supabase.from('tutor_unavailable_blocks').select('id,starts_at,ends_at,reason').gte('ends_at', new Date().toISOString()).order('starts_at')
@@ -213,11 +247,22 @@ export function TutorDashboard() {
     finally { setBusy(false) }
   }
 
+  async function updateAssignmentStatus(id: string, nextStatus: 'assigned' | 'reviewed') {
+    if (!supabase || busy) return
+    setBusy(true); setError(''); setMessage('')
+    const result = await supabase.rpc('transition_assignment_status', { target_assignment_id: id, next_status: nextStatus })
+    setBusy(false)
+    if (result.error) return setError('The assignment status could not be changed. Confirm the student is still assigned to you and try again.')
+    setMessage(nextStatus === 'reviewed' ? 'Assignment marked as reviewed.' : 'Assignment returned to the student for revisions.')
+    await load()
+  }
+
   return <Shell title={`Tutor Dashboard${data.tutor ? ` — ${data.tutor.first_name}` : ''}`}>
     {error && <Notice>{error}</Notice>}{message && <Notice>{message}</Notice>}
     <div className="portal-grid">
       <List title="Sessions" items={data.sessions} render={item => <article key={item.id}><b>{displaySessionTime(item.starts_at, item.ends_at)}</b><span>{item.students?.first_name} {item.students?.last_name} · {item.status}</span>{item.meeting_url && <a href={item.meeting_url} target="_blank" rel="noreferrer">Meeting link</a>}</article>} />
       <List title="Assigned students" items={data.students} render={student => <article key={student.id}><b>{student.first_name} {student.last_name}</b><span>{student.grade || 'Grade not listed'} · {student.current_course || 'Course not listed'}</span></article>} />
+      <List title="Assignments to review" items={data.assignments} render={item => <article key={item.id}><b>{item.title}</b><span>{item.students?.first_name} {item.students?.last_name} · {item.status}</span><small>{item.due_at ? `Due ${displayDate(item.due_at)}` : 'No due date'}</small>{item.status === 'submitted' && <small>Submitted {displayDate(item.submitted_at)}</small>}{item.status === 'reviewed' && <small>Reviewed {displayDate(item.reviewed_at)}</small>}{(item.status === 'submitted' || item.status === 'reviewed') && <div className="assignment-actions">{item.status === 'submitted' && <button type="button" className="remove-button" disabled={busy} onClick={() => void updateAssignmentStatus(item.id, 'reviewed')}>Mark reviewed</button>}<button type="button" className="remove-button" disabled={busy} onClick={() => void updateAssignmentStatus(item.id, 'assigned')}>Return for revisions</button></div>}</article>} />
     </div>
     <section className="availability-section">
       <div className="section-title"><p className="eyebrow">Calendar controls</p><h2>Your availability</h2><p>Add each weekly window when sessions may be scheduled. One-off unavailable blocks override those windows.</p></div>

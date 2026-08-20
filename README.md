@@ -109,6 +109,8 @@ Then run [`supabase/migrations/20260820133000_rls_policy_performance.sql`](supab
 
 Then run [`supabase/migrations/20260820140000_private_privileged_functions.sql`](supabase/migrations/20260820140000_private_privileged_functions.sql). It moves privileged database implementations into a non-exposed `private` schema and retains invoker-rights public wrappers for the existing portal RPC names.
 
+Then run [`supabase/migrations/20260820203358_assignment_completion_workflow.sql`](supabase/migrations/20260820203358_assignment_completion_workflow.sql). It lets a student submit only their own assigned work and lets the active assigned tutor mark a submission reviewed or return it for revisions. The database records submission and review times and rejects every other status transition.
+
 In Supabase Authentication, confirm TOTP multi-factor verification is enabled. The next administrator sign-in displays a QR code and setup key; scan either one with an authenticator app and enter the current six-digit code. Later administrator sign-ins request a fresh six-digit code after the password. If the authenticator device is lost, recover the account through the Supabase administrator console only after verifying the account owner's identity, remove the lost factor, and enroll a new one at the next sign-in.
 
 To enforce the policy automatically, enable Supabase Cron in the dashboard and schedule the cleanup once per day from the SQL Editor:
@@ -169,7 +171,7 @@ Confirm the job under Supabase Dashboard → Integrations → Cron. Keep the sec
 
 Add `https://nazarschoolofmath.com/portal` to the Supabase Authentication allowed redirect URLs. The administrator portal creates secure one-time setup links only for accepted families and active tutors. The server creates or finds the Auth user, atomically links exactly one operational record and role, then sends the setup link through Resend. Existing users receive a password-reset link rather than a duplicate account.
 
-Parents can view their students, sessions, assignments, and progress. Students can view their own sessions, assignments, and progress. Administrators can activate an accepted student and assign one active tutor from the application detail panel. Tutors can define weekly availability, block one-off unavailable times, schedule sessions, and create assignments and progress updates only for actively assigned students. Session times are saved as UTC instants and displayed in each viewer's local time zone. Once a tutor adds any weekly hours, scheduled sessions must fit one complete window; overlapping sessions and unavailable blocks are always rejected.
+Parents can view their students, sessions, assignment status, and progress. Students can view their own sessions, assignments, and progress and submit assigned work for tutor review. Administrators can activate an accepted student and assign one active tutor from the application detail panel. Tutors can define weekly availability, block one-off unavailable times, schedule sessions, create assignments and progress updates, and review assignment submissions only for actively assigned students. Session times are saved as UTC instants and displayed in each viewer's local time zone. Once a tutor adds any weekly hours, scheduled sessions must fit one complete window; overlapping sessions and unavailable blocks are always rejected.
 
 Workflow email behavior:
 

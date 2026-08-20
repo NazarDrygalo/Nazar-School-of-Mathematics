@@ -125,7 +125,7 @@ A student can view only their own:
 - Assignments and due dates.
 - Progress updates.
 
-The student portal is read-only for tutoring records.
+For an assignment with the `assigned` status, the student can select **Mark complete**. The database changes only that assignment's status to `submitted` and records the submission time. Students cannot change assignment content, ownership, or any other tutoring record.
 
 ### Tutor
 
@@ -137,6 +137,7 @@ An active tutor can work only with students currently assigned to that tutor. Th
 - Schedule sessions.
 - Edit session times, duration, meeting links, and status.
 - Create assignments.
+- Review submitted assignments or return them to the student for revisions.
 - Record progress updates.
 - Add a private session note and an optional family summary. These are stored separately: parents can read only the family summary, never the private tutor note.
 
@@ -320,6 +321,6 @@ RATE_LIMIT_SECRET=...
 
 ## 12. Current scope
 
-The platform currently supports applications, automated portal account onboarding, role-based portals, tutor assignments, recurring tutor availability, conflict-aware scheduling, Google Calendar synchronization, scheduled session reminders, assignments, progress tracking, session notes, family change requests, password recovery, email delivery, and automated data retention.
+The platform currently supports applications, automated portal account onboarding, role-based portals, tutor assignments, recurring tutor availability, conflict-aware scheduling, Google Calendar synchronization, scheduled session reminders, student assignment submission and tutor review, progress tracking, session notes, family change requests, password recovery, email delivery, and automated data retention.
 
 Payments and invoicing are intentionally outside the platform because the school handles them through direct personal arrangements.

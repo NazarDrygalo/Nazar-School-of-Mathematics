@@ -197,3 +197,22 @@ rollback;
 ```
 
 Repeat the `portal_invitations` query with an `aal1` administrator JWT and with parent, student, and tutor JWTs. Each query must return no rows or fail, and direct inserts or updates must be denied.
+
+## Assignment submission and review isolation
+
+Run after `20260820203358_assignment_completion_workflow.sql` with a disposable assignment:
+
+```sql
+begin;
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'ASSIGNED_STUDENT_AUTH_UUID', true);
+
+-- Must succeed only while this student's assignment status is assigned.
+select (public.transition_assignment_status('OWN_ASSIGNMENT_UUID', 'submitted')).status;
+
+-- Must fail: a student cannot review an assignment.
+select public.transition_assignment_status('OWN_ASSIGNMENT_UUID', 'reviewed');
+rollback;
+```
+
+Repeat with the active assigned tutor. The tutor may change `submitted` to `reviewed` and may return `submitted` or `reviewed` to `assigned`. A different student, an inactive tutor, and an unassigned tutor must all fail. Confirm that a failed call leaves the assignment row and timestamps unchanged.

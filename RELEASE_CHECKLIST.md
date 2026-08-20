@@ -19,6 +19,7 @@ Existing projects that already have the first five migrations should run the rem
 11. [`supabase/migrations/20260820130000_database_security_cleanup.sql`](supabase/migrations/20260820130000_database_security_cleanup.sql)
 12. [`supabase/migrations/20260820133000_rls_policy_performance.sql`](supabase/migrations/20260820133000_rls_policy_performance.sql)
 13. [`supabase/migrations/20260820140000_private_privileged_functions.sql`](supabase/migrations/20260820140000_private_privileged_functions.sql)
+14. [`supabase/migrations/20260820203358_assignment_completion_workflow.sql`](supabase/migrations/20260820203358_assignment_completion_workflow.sql)
 
 For a new Supabase project, run the complete order:
 
@@ -40,6 +41,7 @@ For a new Supabase project, run the complete order:
 16. `20260820130000_database_security_cleanup.sql`
 17. `20260820133000_rls_policy_performance.sql`
 18. `20260820140000_private_privileged_functions.sql`
+19. `20260820203358_assignment_completion_workflow.sql`
 
 Afterward, run the checks in `supabase/RLS_VERIFICATION.md` with disposable test records.
 
@@ -114,6 +116,9 @@ Check desktop and mobile layouts at minimum on Home, Resources, Apply, Portal Lo
 - Create a disposable session between 24 and 25 hours away, invoke the secured reminder endpoint, and confirm one reminder reaches the parent and tutor plus the student when a separate student email exists.
 - Invoke the endpoint again and confirm no recipient receives a duplicate reminder.
 - Confirm a cancelled session in the same window sends no reminder.
+- Create an assignment as the tutor, mark it complete as the linked student, and confirm the tutor sees it as submitted.
+- Mark the assignment reviewed, then return it for revisions and confirm the student and parent see each status change.
+- Confirm a different student and an unassigned tutor cannot change the assignment status.
 - Submit a parent rescheduling request more than three days before the lesson.
 - Confirm a request inside three days is rejected.
 - Approve the valid request as admin and confirm the session time changes without changing its duration.
