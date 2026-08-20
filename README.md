@@ -115,6 +115,8 @@ Then run [`supabase/migrations/20260820213451_assignment_email_notifications.sql
 
 Then run [`supabase/migrations/20260820222420_progress_email_notifications.sql`](supabase/migrations/20260820222420_progress_email_notifications.sql) and deploy the matching server code immediately afterward. It makes tutor progress writes server-only and idempotent, records each delivery attempt, and emails the linked parent plus the student when a separate student address exists.
 
+Then run [`supabase/migrations/20260820224411_weekly_family_digests.sql`](supabase/migrations/20260820224411_weekly_family_digests.sql) and deploy the matching server code. It adds idempotent delivery tracking for weekly family summaries covering recent sessions, assignments, and progress.
+
 In Supabase Authentication, confirm TOTP multi-factor verification is enabled. The next administrator sign-in displays a QR code and setup key; scan either one with an authenticator app and enter the current six-digit code. Later administrator sign-ins request a fresh six-digit code after the password. If the authenticator device is lost, recover the account through the Supabase administrator console only after verifying the account owner's identity, remove the lost factor, and enroll a new one at the next sign-in.
 
 To enforce the policy automatically, enable Supabase Cron in the dashboard and schedule the cleanup once per day from the SQL Editor:
@@ -173,6 +175,37 @@ select cron.schedule(
 
 Confirm the job under Supabase Dashboard → Integrations → Cron. Keep the secret server-only. The endpoint rejects non-POST requests and missing or incorrect credentials without querying tutoring data.
 
+### Weekly family digests
+
+The server sends a summary only for active students who had session, assignment, or progress activity during the previous Monday-to-Monday UTC period. A period-specific event key prevents Cron retries from sending duplicates. The parent receives the digest, and a separate student address receives its own copy when configured.
+
+Reuse the existing `REMINDER_CRON_SECRET`. Store only the new endpoint in Supabase Vault, then schedule the job for Mondays at 13:00 UTC:
+
+```sql
+select vault.create_secret(
+  'https://nazarschoolofmath.com/api/cron/weekly-family-digests',
+  'weekly_family_digest_url'
+);
+
+select cron.schedule(
+  'send-weekly-family-digests',
+  '0 13 * * 1',
+  $$
+  select net.http_post(
+    url := (select decrypted_secret from vault.decrypted_secrets where name = 'weekly_family_digest_url' order by created_at desc limit 1),
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'session_reminder_cron_secret' order by created_at desc limit 1)
+    ),
+    body := jsonb_build_object('scheduled_at', now()),
+    timeout_milliseconds := 10000
+  );
+  $$
+);
+```
+
+Confirm the job in Supabase Cron after the first Monday run. The response reports student, digest, sent, skipped, and failed counts. Delivery failures remain visible in the administrator operations dashboard.
+
 Add `https://nazarschoolofmath.com/portal` to the Supabase Authentication allowed redirect URLs. The administrator portal creates secure one-time setup links only for accepted families and active tutors. The server creates or finds the Auth user, atomically links exactly one operational record and role, then sends the setup link through Resend. Existing users receive a password-reset link rather than a duplicate account.
 
 Parents can view their students, sessions, assignment status, and progress. Students can view their own sessions, assignments, and progress and submit assigned work for tutor review. Administrators can activate an accepted student and assign one active tutor from the application detail panel. Tutors can define weekly availability, block one-off unavailable times, schedule sessions, create assignments and progress updates, and review assignment submissions only for actively assigned students. Session times are saved as UTC instants and displayed in each viewer's local time zone. Once a tutor adds any weekly hours, scheduled sessions must fit one complete window; overlapping sessions and unavailable blocks are always rejected.
@@ -187,6 +220,7 @@ Workflow email behavior:
 - Submitting an assignment emails the assigned tutor.
 - Reviewing an assignment or returning it for revisions emails the parent and optional student address.
 - Recording a progress update emails the parent and optional student address.
+- Supabase Cron sends a Monday digest when the student had activity in the prior week.
 - Every delivery attempt is recorded in `notification_deliveries`; unique event keys prevent retries from producing duplicate messages.
 - The operational change remains saved if Resend fails, and the administrator dashboard displays the failure details.
 

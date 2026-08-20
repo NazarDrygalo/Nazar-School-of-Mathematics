@@ -22,6 +22,7 @@ Existing projects that already have the first five migrations should run the rem
 14. [`supabase/migrations/20260820203358_assignment_completion_workflow.sql`](supabase/migrations/20260820203358_assignment_completion_workflow.sql)
 15. [`supabase/migrations/20260820213451_assignment_email_notifications.sql`](supabase/migrations/20260820213451_assignment_email_notifications.sql)
 16. [`supabase/migrations/20260820222420_progress_email_notifications.sql`](supabase/migrations/20260820222420_progress_email_notifications.sql)
+17. [`supabase/migrations/20260820224411_weekly_family_digests.sql`](supabase/migrations/20260820224411_weekly_family_digests.sql)
 
 For a new Supabase project, run the complete order:
 
@@ -46,6 +47,7 @@ For a new Supabase project, run the complete order:
 19. `20260820203358_assignment_completion_workflow.sql`
 20. `20260820213451_assignment_email_notifications.sql`
 21. `20260820222420_progress_email_notifications.sql`
+22. `20260820224411_weekly_family_digests.sql`
 
 Afterward, run the checks in `supabase/RLS_VERIFICATION.md` with disposable test records.
 
@@ -56,6 +58,10 @@ Enable Supabase Cron and create the daily job documented in `README.md`. Run `se
 ## 2a. Session reminder schedule
 
 Generate and add `REMINDER_CRON_SECRET` in Render, deploy, store the endpoint and matching secret in Supabase Vault, and create the 15-minute HTTP Cron job documented in `README.md`. Never use a `VITE_` prefix for this secret.
+
+## 2b. Weekly family digest schedule
+
+Reuse `REMINDER_CRON_SECRET`, store the weekly digest endpoint in Supabase Vault, and create the Monday HTTP Cron job documented in `README.md`. Confirm the existing Vault secret named `session_reminder_cron_secret` still contains the same current Render value.
 
 ## 3. Supabase Authentication
 
@@ -125,6 +131,7 @@ Check desktop and mobile layouts at minimum on Home, Resources, Apply, Portal Lo
 - Mark the assignment reviewed, then return it for revisions and confirm the student and parent see each status change and receive each matching email exactly once.
 - Confirm a different student and an unassigned tutor cannot change the assignment status.
 - Record a progress update as the tutor; confirm the parent and optional student address receive it exactly once and an unassigned tutor cannot create one.
+- Invoke the weekly digest endpoint with the Cron credential; confirm active students with recent activity receive one digest per distinct family/student address, inactive students and students without activity are skipped, and a repeated invocation sends no duplicates.
 - Submit a parent rescheduling request more than three days before the lesson.
 - Confirm a request inside three days is rejected.
 - Approve the valid request as admin and confirm the session time changes without changing its duration.
@@ -145,5 +152,6 @@ After all earlier checks pass, commit and push to `main` to trigger Render. Then
 - Password-reset links return to the production site.
 - No browser console errors or failed API requests appear.
 - Supabase Cron shows successful `send-tutoring-session-reminders` runs and reminder delivery failures, if any, appear in the administrator dashboard.
+- Supabase Cron shows successful `send-weekly-family-digests` runs and digest delivery failures, if any, appear in the administrator dashboard.
 
 Record the test application IDs and delete disposable records after verification.

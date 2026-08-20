@@ -7,6 +7,7 @@ import { changeAssignmentStatus, createSessionChangeRequest, createTutorAssignme
 import { inviteAcceptedFamily, inviteTutor } from './server/portal-onboarding.mjs'
 import { beginGoogleCalendarAuthorization, completeGoogleCalendarAuthorization, disconnectGoogleCalendar, getGoogleCalendarStatus } from './server/google-calendar.mjs'
 import { sendDueSessionReminders } from './server/session-reminders.mjs'
+import { sendWeeklyFamilyDigests } from './server/weekly-family-digests.mjs'
 
 // Local convenience only; hosted platforms should provide these through their environment.
 if (existsSync('.env')) {
@@ -301,6 +302,16 @@ export async function requestHandler(req, res) {
     catch (error) {
       console.error('Session reminder processing failed:', error.message)
       return sendJson(res, error.status || 500, { error: error.message || 'Session reminders could not be processed.' })
+    }
+  }
+  if (requestPath === '/api/cron/weekly-family-digests') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' })
+    if (!process.env.REMINDER_CRON_SECRET) return sendJson(res, 503, { error: 'Weekly family digest scheduling is not configured.' })
+    if (!validCronAuthorization(req)) return sendJson(res, 401, { error: 'A valid scheduler credential is required.' })
+    try { return sendJson(res, 200, { ok: true, ...(await sendWeeklyFamilyDigests()) }) }
+    catch (error) {
+      console.error('Weekly family digest processing failed:', error.message)
+      return sendJson(res, error.status || 500, { error: error.message || 'Weekly family digests could not be processed.' })
     }
   }
   if (requestPath === '/api/integrations/google-calendar/callback') {

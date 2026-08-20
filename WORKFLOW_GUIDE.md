@@ -222,8 +222,9 @@ The platform sends only the workflow messages currently required:
 - An assignment-submitted email to the assigned tutor.
 - An assignment-reviewed or revision-requested email to the parent and optional student address.
 - A tutor-recorded progress email to the parent and optional student address.
+- A Monday activity digest to the parent and optional student address when the prior week contains tutoring activity.
 
-Supabase Cron also invokes the secured reminder worker every 15 minutes. The worker sends approximately one-day session reminders to the parent, tutor, and optional student email. The platform does not send general marketing messages.
+Supabase Cron invokes the secured reminder worker every 15 minutes and the family digest worker each Monday. Reminders go to the parent, tutor, and optional student email; weekly summaries go to the parent and optional student email only when recent activity exists. The platform does not send general marketing messages.
 
 Workflow changes are saved before email delivery is attempted. Each attempt has a unique event key, delivery state, recipient, timestamp, and error detail in `notification_deliveries`. Retrying the same operation does not resend an already delivered message. Administrators can inspect failed workflow messages in the operations dashboard.
 
@@ -280,10 +281,11 @@ The minimum workflow smoke test is:
 7. Confirm the parent and student can see the correct session.
 8. Create an assignment, submit it as the student, and review it as the tutor; confirm each targeted email is delivered once.
 9. Record a progress update as the tutor and confirm the parent and optional student email receive it once.
-10. Submit a valid parent rescheduling request.
-11. Approve it as administrator and verify the updated time.
-12. Confirm that each role cannot see records belonging to unrelated users.
-13. Test password recovery.
+10. Invoke the weekly digest worker twice and confirm the first call sends the activity summary while the retry sends no duplicate.
+11. Submit a valid parent rescheduling request.
+12. Approve it as administrator and verify the updated time.
+13. Confirm that each role cannot see records belonging to unrelated users.
+14. Test password recovery.
 
 Use `supabase/RLS_VERIFICATION.md` for database-policy checks and `RELEASE_CHECKLIST.md` for the complete release process.
 
@@ -327,6 +329,6 @@ RATE_LIMIT_SECRET=...
 
 ## 12. Current scope
 
-The platform currently supports applications, automated portal account onboarding, role-based portals, tutor assignments, recurring tutor availability, conflict-aware scheduling, Google Calendar synchronization, scheduled session reminders, assignment workflow notifications, student assignment submission and tutor review, progress tracking with family email updates, session notes, family change requests, password recovery, email delivery, and automated data retention.
+The platform currently supports applications, automated portal account onboarding, role-based portals, tutor assignments, recurring tutor availability, conflict-aware scheduling, Google Calendar synchronization, scheduled session reminders, weekly family digests, assignment workflow notifications, student assignment submission and tutor review, progress tracking with family email updates, session notes, family change requests, password recovery, email delivery, and automated data retention.
 
 Payments and invoicing are intentionally outside the platform because the school handles them through direct personal arrangements.

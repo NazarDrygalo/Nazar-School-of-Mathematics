@@ -222,3 +222,7 @@ After `20260820213451_assignment_email_notifications.sql`, direct browser assign
 ## Progress notification isolation
 
 After `20260820222420_progress_email_notifications.sql`, direct `INSERT`, `UPDATE`, and `DELETE` operations on `student_progress` must fail for every browser role. Record progress through `POST /api/tutor/progress`; an active assigned tutor must succeed, while inactive and unassigned tutors must fail. Confirm one `progress_recorded` delivery exists for the parent and one for a distinct student email when configured, and confirm retrying the same mutation ID creates neither a duplicate progress row nor duplicate emails.
+
+## Weekly family digest isolation
+
+After `20260820224411_weekly_family_digests.sql`, confirm `POST /api/cron/weekly-family-digests` returns `401` without the exact scheduler credential and `405` for non-POST requests. Invoke it with the credential twice using disposable recent activity. The first call may create `weekly_family_digest` deliveries; the second must report them as already sent. Browser roles must remain unable to read or write delivery history.
