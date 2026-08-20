@@ -16,6 +16,8 @@ Existing projects that already have the first five migrations should run the rem
 8. [`supabase/migrations/20260819120000_tutor_availability.sql`](supabase/migrations/20260819120000_tutor_availability.sql)
 9. [`supabase/migrations/20260819152015_session_reminders.sql`](supabase/migrations/20260819152015_session_reminders.sql)
 10. [`supabase/migrations/20260820120000_google_calendar_sync.sql`](supabase/migrations/20260820120000_google_calendar_sync.sql)
+11. [`supabase/migrations/20260820130000_database_security_cleanup.sql`](supabase/migrations/20260820130000_database_security_cleanup.sql)
+12. [`supabase/migrations/20260820133000_rls_policy_performance.sql`](supabase/migrations/20260820133000_rls_policy_performance.sql)
 
 For a new Supabase project, run the complete order:
 
@@ -34,6 +36,8 @@ For a new Supabase project, run the complete order:
 13. `20260819120000_tutor_availability.sql`
 14. `20260819152015_session_reminders.sql`
 15. `20260820120000_google_calendar_sync.sql`
+16. `20260820130000_database_security_cleanup.sql`
+17. `20260820133000_rls_policy_performance.sql`
 
 Afterward, run the checks in `supabase/RLS_VERIFICATION.md` with disposable test records.
 

@@ -103,6 +103,10 @@ Then run [`supabase/migrations/20260819152015_session_reminders.sql`](supabase/m
 
 Then run [`supabase/migrations/20260820120000_google_calendar_sync.sql`](supabase/migrations/20260820120000_google_calendar_sync.sql). It adds server-only encrypted Google Calendar connections, single-use OAuth state, and non-sensitive synchronization audit records. Apply it before deploying the calendar controls.
 
+Finally, run [`supabase/migrations/20260820130000_database_security_cleanup.sql`](supabase/migrations/20260820130000_database_security_cleanup.sql). It removes unintended browser execution grants from internal database helpers, fixes mutable trigger-function search paths, prevents future public RPC auto-grants, and adds covering indexes for every foreign key reported by the Supabase advisor.
+
+Then run [`supabase/migrations/20260820133000_rls_policy_performance.sql`](supabase/migrations/20260820133000_rls_policy_performance.sql). It preserves the existing RLS access rules while caching `auth.uid()` once per statement, eliminating repeated per-row authentication lookups reported by the Supabase performance advisor.
+
 In Supabase Authentication, confirm TOTP multi-factor verification is enabled. The next administrator sign-in displays a QR code and setup key; scan either one with an authenticator app and enter the current six-digit code. Later administrator sign-ins request a fresh six-digit code after the password. If the authenticator device is lost, recover the account through the Supabase administrator console only after verifying the account owner's identity, remove the lost factor, and enroll a new one at the next sign-in.
 
 To enforce the policy automatically, enable Supabase Cron in the dashboard and schedule the cleanup once per day from the SQL Editor:

@@ -138,6 +138,23 @@ rollback;
 
 Repeat the read and insert as a student and tutor. Neither role may read or write delivery history. An MFA-authenticated administrator may read failures but must still be unable to insert or update them directly.
 
+## Internal function execution grants
+
+Run after `20260820130000_database_security_cleanup.sql`:
+
+```sql
+select
+  has_function_privilege('anon', 'public.is_student()', 'execute') as anon_is_student,
+  has_function_privilege('anon', 'public.is_tutor()', 'execute') as anon_is_tutor,
+  has_function_privilege('anon', 'public.session_note_tutor_matches_session(uuid,uuid)', 'execute') as anon_note_helper,
+  has_function_privilege('authenticated', 'public.rls_auto_enable()', 'execute') as authenticated_event_trigger,
+  has_function_privilege('authenticated', 'public.set_updated_at()', 'execute') as authenticated_trigger_helper,
+  has_function_privilege('authenticated', 'public.onboard_accepted_application(uuid,uuid)', 'execute') as authenticated_onboarding,
+  has_function_privilege('authenticated', 'public.save_tutoring_session_note(uuid,text,text)', 'execute') as authenticated_note_save;
+```
+
+The first five values must be `false`. The final two must remain `true`: those are intentional signed-in RPCs that validate administrator MFA or the tutor/session assignment inside the function.
+
 ## Portal invitation isolation
 
 ```sql
