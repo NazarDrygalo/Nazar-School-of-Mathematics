@@ -204,7 +204,7 @@ Security is enforced at multiple levels:
 - **Security headers:** The Node server sets CSP, HSTS, clickjacking protection, browser-permission restrictions, and related headers for API and static responses.
 - **Application abuse protection:** Public applications require JSON, validate the browser origin, and use persistent HMAC-based IP and email rate limits without storing raw IP or email values in the rate-limit table.
 - **Bot verification:** Cloudflare Turnstile issues a short-lived, single-use token in the browser; the server validates its signature, hostname, and action before saving an application.
-- **Workflow enforcement:** Session scheduling, change requests, resolutions, and session notes use narrow server endpoints or database functions; direct browser mutations that could bypass audit or notification behavior are revoked.
+- **Workflow enforcement:** Session scheduling, change requests, resolutions, assignment creation and transitions, and session notes use narrow server endpoints or database functions; direct browser mutations that could bypass audit or notification behavior are revoked.
 
 Frontend controls improve usability, but database policies are the authoritative access boundary.
 
@@ -218,8 +218,11 @@ The platform sends only the workflow messages currently required:
 - A session-created or session-updated email to the linked parent.
 - A session-change-request email to the administrator.
 - A request-resolution email to the linked parent and tutor.
+- An assignment-created email to the parent and optional student address.
+- An assignment-submitted email to the assigned tutor.
+- An assignment-reviewed or revision-requested email to the parent and optional student address.
 
-Supabase Cron also invokes the secured reminder worker every 15 minutes. The worker sends approximately one-day session reminders to the parent, tutor, and optional student email. The platform does not currently send assignment notifications, progress emails, or general marketing messages.
+Supabase Cron also invokes the secured reminder worker every 15 minutes. The worker sends approximately one-day session reminders to the parent, tutor, and optional student email. The platform does not currently send progress emails or general marketing messages.
 
 Workflow changes are saved before email delivery is attempted. Each attempt has a unique event key, delivery state, recipient, timestamp, and error detail in `notification_deliveries`. Retrying the same operation does not resend an already delivered message. Administrators can inspect failed workflow messages in the operations dashboard.
 
@@ -274,10 +277,11 @@ The minimum workflow smoke test is:
 5. Send disposable parent, student, and tutor setup emails from the administrator portal and complete each password setup.
 6. Schedule and edit a future session as the tutor.
 7. Confirm the parent and student can see the correct session.
-8. Submit a valid parent rescheduling request.
-9. Approve it as administrator and verify the updated time.
-10. Confirm that each role cannot see records belonging to unrelated users.
-11. Test password recovery.
+8. Create an assignment, submit it as the student, and review it as the tutor; confirm each targeted email is delivered once.
+9. Submit a valid parent rescheduling request.
+10. Approve it as administrator and verify the updated time.
+11. Confirm that each role cannot see records belonging to unrelated users.
+12. Test password recovery.
 
 Use `supabase/RLS_VERIFICATION.md` for database-policy checks and `RELEASE_CHECKLIST.md` for the complete release process.
 
@@ -321,6 +325,6 @@ RATE_LIMIT_SECRET=...
 
 ## 12. Current scope
 
-The platform currently supports applications, automated portal account onboarding, role-based portals, tutor assignments, recurring tutor availability, conflict-aware scheduling, Google Calendar synchronization, scheduled session reminders, student assignment submission and tutor review, progress tracking, session notes, family change requests, password recovery, email delivery, and automated data retention.
+The platform currently supports applications, automated portal account onboarding, role-based portals, tutor assignments, recurring tutor availability, conflict-aware scheduling, Google Calendar synchronization, scheduled session reminders, assignment workflow notifications, student assignment submission and tutor review, progress tracking, session notes, family change requests, password recovery, email delivery, and automated data retention.
 
 Payments and invoicing are intentionally outside the platform because the school handles them through direct personal arrangements.

@@ -33,6 +33,7 @@ export async function sendTrackedEmail(supabase, message) {
     event_type: message.eventType,
     session_id: message.sessionId || null,
     change_request_id: message.changeRequestId || null,
+    assignment_id: message.assignmentId || null,
     recipient_role: message.recipientRole,
     recipient_email: message.to,
     status: 'sending'
@@ -78,7 +79,7 @@ export async function sendTrackedEmail(supabase, message) {
 }
 
 async function familyForStudent(supabase, studentId) {
-  const { data: student, error } = await supabase.from('students').select('id,first_name,last_name,parent_id').eq('id', studentId).maybeSingle()
+  const { data: student, error } = await supabase.from('students').select('id,first_name,last_name,parent_id,email').eq('id', studentId).maybeSingle()
   if (error || !student) throw Object.assign(new Error('The student record could not be loaded.'), { status: 404 })
   const { data: parent } = await supabase.from('parents').select('id,auth_user_id,first_name,last_name,email').eq('id', student.parent_id).maybeSingle()
   if (!parent) throw Object.assign(new Error('The family record could not be loaded.'), { status: 404 })
@@ -217,4 +218,107 @@ export async function resolveSessionChangeRequest(req, requestId, body) {
   const calendar = resolution === 'approved' ? await syncSessionToGoogleCalendar(supabase, session) : { status: 'unchanged' }
   const warnings = [familyDelivery.warning, tutorDelivery.warning, calendar.warning].filter(Boolean)
   return { ok: true, resolution, emails: { parent: familyDelivery.status, tutor: tutorDelivery.status }, calendar: calendar.status, warning: warnings.join(' ') || undefined }
+}
+
+const assignmentDue = value => value ? sessionTime(value) : 'No due date'
+
+async function assignmentContext(supabase, assignment) {
+  const [{ student, parent }, tutorResult] = await Promise.all([
+    familyForStudent(supabase, assignment.student_id),
+    supabase.from('tutors').select('id,first_name,last_name,email').eq('id', assignment.tutor_id).maybeSingle()
+  ])
+  if (!tutorResult.data) throw Object.assign(new Error('The assigned tutor record could not be loaded.'), { status: 404 })
+  return { student, parent, tutor: tutorResult.data }
+}
+
+function familyAssignmentRecipients(student, parent) {
+  const recipients = [{ role: 'parent', email: clean(parent.email).toLowerCase(), firstName: parent.first_name }]
+  const studentEmail = clean(student.email).toLowerCase()
+  if (studentEmail && studentEmail !== recipients[0].email) recipients.push({ role: 'student', email: studentEmail, firstName: student.first_name })
+  return recipients
+}
+
+async function notifyAssignmentFamily(supabase, assignment, context, eventType, actionText) {
+  const studentName = `${context.student.first_name} ${context.student.last_name}`
+  const tutorName = `${context.tutor.first_name} ${context.tutor.last_name}`
+  const version = assignment.last_transition_id || assignment.status_changed_at || assignment.updated_at
+  const deliveries = await Promise.all(familyAssignmentRecipients(context.student, context.parent).map(target => sendTrackedEmail(supabase, {
+    eventKey: `assignment:${assignment.id}:${eventType}:${version}:${target.role}`,
+    eventType,
+    assignmentId: assignment.id,
+    recipientRole: target.role,
+    to: target.email,
+    subject: `Assignment ${actionText} | ${studentName}`,
+    text: `Hello ${target.firstName},\n\nThe assignment “${assignment.title}” for ${studentName} was ${actionText}.\n\nDue: ${assignmentDue(assignment.due_at)}\nTutor: ${tutorName}\nStatus: ${assignment.status}\n\nPlease sign in to the portal for the instructions and current status.\n\nNazar's School of Mathematics`,
+    html: `<p>Hello ${escapeHtml(target.firstName)},</p><p>The assignment <strong>${escapeHtml(assignment.title)}</strong> for ${escapeHtml(studentName)} was ${escapeHtml(actionText)}.</p><p><strong>Due:</strong> ${escapeHtml(assignmentDue(assignment.due_at))}<br><strong>Tutor:</strong> ${escapeHtml(tutorName)}<br><strong>Status:</strong> ${escapeHtml(assignment.status)}</p><p>Please sign in to the portal for the instructions and current status.</p><p>Nazar's School of Mathematics</p>`
+  })))
+  return deliveries
+}
+
+export async function createTutorAssignment(req, body) {
+  const { supabase, user } = await requireRole(req, 'tutor')
+  const assignmentId = clean(body?.mutation_id, 40)
+  const studentId = clean(body?.student_id, 40)
+  const title = clean(body?.title, 200)
+  const instructions = clean(body?.instructions, 5000)
+  if (!uuidPattern.test(assignmentId) || !uuidPattern.test(studentId)) throw Object.assign(new Error('A valid assignment and student are required.'), { status: 400 })
+  if (!title) throw Object.assign(new Error('Enter an assignment title.'), { status: 400 })
+  let dueAt = null
+  if (body?.due_at) {
+    const parsedDueAt = new Date(body.due_at)
+    if (Number.isNaN(parsedDueAt.getTime())) throw Object.assign(new Error('Enter a valid due date.'), { status: 400 })
+    dueAt = parsedDueAt.toISOString()
+  }
+  const tutor = await tutorForUser(supabase, user.id)
+  const { data: assignment, error } = await supabase.rpc('create_assignment_server', {
+    p_assignment_id: assignmentId,
+    p_student_id: studentId,
+    p_tutor_id: tutor.id,
+    p_title: title,
+    p_instructions: instructions || null,
+    p_due_at: dueAt,
+    p_actor_user_id: user.id
+  })
+  if (error || !assignment) throw Object.assign(new Error('The assignment could not be saved. Confirm the assignment-notifications migration has been run and the student is still assigned to you.'), { status: 409 })
+  const context = await assignmentContext(supabase, assignment)
+  const deliveries = await notifyAssignmentFamily(supabase, assignment, context, 'assignment_created', 'assigned')
+  const warnings = deliveries.map(delivery => delivery.warning).filter(Boolean)
+  return { ok: true, assignment, emails: deliveries.map(delivery => delivery.status), warning: warnings.join(' ') || undefined }
+}
+
+export async function changeAssignmentStatus(req, assignmentId, body, actorRole) {
+  const { supabase, user } = await requireRole(req, actorRole)
+  const nextStatus = clean(body?.next_status, 30)
+  const transitionId = clean(body?.mutation_id, 40)
+  if (!uuidPattern.test(assignmentId)) throw Object.assign(new Error('A valid assignment ID is required.'), { status: 400 })
+  if (!uuidPattern.test(transitionId)) throw Object.assign(new Error('A valid assignment transition ID is required.'), { status: 400 })
+  const allowed = actorRole === 'student' ? ['submitted'] : ['assigned', 'reviewed']
+  if (!allowed.includes(nextStatus)) throw Object.assign(new Error('That assignment status is not available for this portal role.'), { status: 400 })
+  const { data: assignment, error } = await supabase.rpc('transition_assignment_status_server', {
+    p_assignment_id: assignmentId,
+    p_next_status: nextStatus,
+    p_actor_user_id: user.id,
+    p_actor_role: actorRole,
+    p_transition_id: transitionId
+  })
+  if (error || !assignment) throw Object.assign(new Error('The assignment status could not be changed. Confirm the assignment-notifications migration has been run and the assignment is still available to you.'), { status: 409 })
+  const context = await assignmentContext(supabase, assignment)
+  let deliveries
+  if (nextStatus === 'submitted') {
+    deliveries = [await sendTrackedEmail(supabase, {
+      eventKey: `assignment:${assignment.id}:assignment_submitted:${assignment.last_transition_id}:tutor`,
+      eventType: 'assignment_submitted',
+      assignmentId: assignment.id,
+      recipientRole: 'tutor',
+      to: context.tutor.email,
+      subject: `Assignment submitted | ${context.student.first_name} ${context.student.last_name}`,
+      text: `${context.student.first_name} ${context.student.last_name} submitted “${assignment.title}”.\n\nSign in to the tutor portal to review it.`,
+      html: `<p><strong>${escapeHtml(context.student.first_name)} ${escapeHtml(context.student.last_name)}</strong> submitted <strong>${escapeHtml(assignment.title)}</strong>.</p><p>Sign in to the tutor portal to review it.</p>`
+    })]
+  } else {
+    const eventType = nextStatus === 'reviewed' ? 'assignment_reviewed' : 'assignment_revision_requested'
+    deliveries = await notifyAssignmentFamily(supabase, assignment, context, eventType, nextStatus === 'reviewed' ? 'reviewed' : 'returned for revisions')
+  }
+  const warnings = deliveries.map(delivery => delivery.warning).filter(Boolean)
+  return { ok: true, assignment, emails: deliveries.map(delivery => delivery.status), warning: warnings.join(' ') || undefined }
 }

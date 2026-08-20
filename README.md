@@ -111,6 +111,8 @@ Then run [`supabase/migrations/20260820140000_private_privileged_functions.sql`]
 
 Then run [`supabase/migrations/20260820203358_assignment_completion_workflow.sql`](supabase/migrations/20260820203358_assignment_completion_workflow.sql). It lets a student submit only their own assigned work and lets the active assigned tutor mark a submission reviewed or return it for revisions. The database records submission and review times and rejects every other status transition.
 
+Then run [`supabase/migrations/20260820213451_assignment_email_notifications.sql`](supabase/migrations/20260820213451_assignment_email_notifications.sql) and deploy the matching server code immediately afterward. It routes assignment creation and status changes through authenticated server endpoints, records idempotent delivery claims, notifies the family when work is assigned or reviewed, and notifies the tutor when a student submits work.
+
 In Supabase Authentication, confirm TOTP multi-factor verification is enabled. The next administrator sign-in displays a QR code and setup key; scan either one with an authenticator app and enter the current six-digit code. Later administrator sign-ins request a fresh six-digit code after the password. If the authenticator device is lost, recover the account through the Supabase administrator console only after verifying the account owner's identity, remove the lost factor, and enroll a new one at the next sign-in.
 
 To enforce the policy automatically, enable Supabase Cron in the dashboard and schedule the cleanup once per day from the SQL Editor:
@@ -179,6 +181,9 @@ Workflow email behavior:
 - A parent requesting cancellation or a new time emails the administrator.
 - Approving or declining a request emails both the linked parent and tutor.
 - Supabase Cron sends an approximately one-day reminder to the parent, tutor, and optional student email.
+- Creating an assignment emails the parent and the student when a separate student email exists.
+- Submitting an assignment emails the assigned tutor.
+- Reviewing an assignment or returning it for revisions emails the parent and optional student address.
 - Every delivery attempt is recorded in `notification_deliveries`; unique event keys prevent retries from producing duplicate messages.
 - The operational change remains saved if Resend fails, and the administrator dashboard displays the failure details.
 

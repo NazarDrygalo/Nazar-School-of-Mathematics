@@ -216,3 +216,5 @@ rollback;
 ```
 
 Repeat with the active assigned tutor. The tutor may change `submitted` to `reviewed` and may return `submitted` or `reviewed` to `assigned`. A different student, an inactive tutor, and an unassigned tutor must all fail. Confirm that a failed call leaves the assignment row and timestamps unchanged.
+
+After `20260820213451_assignment_email_notifications.sql`, direct browser assignment creation and calls to `public.transition_assignment_status` must fail for `authenticated`. Repeat assignment creation, submission, review, and revision through the matching `/api/tutor/assignments` and `/api/{student|tutor}/assignments/:id/status` endpoints. Confirm each operation creates only the expected `notification_deliveries` rows, while parent, student, and tutor roles still cannot read or write delivery history.

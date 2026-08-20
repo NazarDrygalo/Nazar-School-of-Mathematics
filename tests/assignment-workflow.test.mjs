@@ -24,7 +24,8 @@ test('assignment status transitions authorize the assigned student and active tu
 test('student and tutor dashboards expose the assignment completion workflow', async () => {
   const dashboard = await readProjectFile('src/Dashboards.tsx')
 
-  assert.match(dashboard, /target_assignment_id: id, next_status: 'submitted'/)
+  assert.match(dashboard, /\/api\/student\/assignments\/\$\{id\}\/status/)
+  assert.match(dashboard, /next_status: 'submitted'/)
   assert.match(dashboard, />Mark complete</)
   assert.match(dashboard, />Mark reviewed</)
   assert.match(dashboard, />Return for revisions</)

@@ -3,7 +3,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
 import { extname, isAbsolute, join, normalize, relative } from 'node:path'
 import { createSupabaseAdminClient, isSupabaseConfigured } from './server/supabase.mjs'
-import { createSessionChangeRequest, resolveSessionChangeRequest, saveTutorSession } from './server/workflow-notifications.mjs'
+import { changeAssignmentStatus, createSessionChangeRequest, createTutorAssignment, resolveSessionChangeRequest, saveTutorSession } from './server/workflow-notifications.mjs'
 import { inviteAcceptedFamily, inviteTutor } from './server/portal-onboarding.mjs'
 import { beginGoogleCalendarAuthorization, completeGoogleCalendarAuthorization, disconnectGoogleCalendar, getGoogleCalendarStatus } from './server/google-calendar.mjs'
 import { sendDueSessionReminders } from './server/session-reminders.mjs'
@@ -341,6 +341,15 @@ export async function requestHandler(req, res) {
     const sessionId = tutorSessionMatch[1] || null
     if ((!sessionId && req.method !== 'POST') || (sessionId && req.method !== 'PATCH')) return sendJson(res, 405, { error: 'Method not allowed.' })
     return workflowAction(req, res, body => saveTutorSession(req, body, sessionId))
+  }
+  if (requestPath === '/api/tutor/assignments') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' })
+    return workflowAction(req, res, body => createTutorAssignment(req, body))
+  }
+  const assignmentStatusMatch = requestPath?.match(/^\/api\/(student|tutor)\/assignments\/([0-9a-f-]+)\/status$/i)
+  if (assignmentStatusMatch) {
+    if (req.method !== 'PATCH') return sendJson(res, 405, { error: 'Method not allowed.' })
+    return workflowAction(req, res, body => changeAssignmentStatus(req, assignmentStatusMatch[2], body, assignmentStatusMatch[1].toLowerCase()))
   }
   if (req.url?.split('?')[0] === '/api/parent/session-change-requests') {
     if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' })

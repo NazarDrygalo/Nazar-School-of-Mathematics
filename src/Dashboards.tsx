@@ -105,11 +105,12 @@ export function StudentDashboard() {
   async function submitAssignment(id: string) {
     if (!supabase || busy) return
     setBusy(true); setError(''); setMessage('')
-    const result = await supabase.rpc('transition_assignment_status', { target_assignment_id: id, next_status: 'submitted' })
-    setBusy(false)
-    if (result.error) return setError('The assignment could not be submitted. Confirm it is still assigned to you and try again.')
-    setMessage('Assignment submitted for tutor review.')
-    await load()
+    try {
+      const result = await portalRequest(`/api/student/assignments/${id}/status`, 'PATCH', { next_status: 'submitted', mutation_id: crypto.randomUUID() })
+      setMessage(result.warning ? `Assignment submitted for tutor review. ${result.warning}` : 'Assignment submitted for tutor review and your tutor was notified.')
+      await load()
+    } catch (submitError) { setError(submitError instanceof Error ? submitError.message : 'The assignment could not be submitted.') }
+    finally { setBusy(false) }
   }
 
   return <Shell title={`Student Dashboard${data.student ? ` — ${data.student.first_name}` : ''}`}>
@@ -197,6 +198,9 @@ export function TutorDashboard() {
       if (kind === 'session' || kind === 'session_update') {
         const result = await portalRequest(kind === 'session' ? '/api/tutor/sessions' : `/api/tutor/sessions/${sessionEdit.id}`, kind === 'session' ? 'POST' : 'PATCH', { ...payload, mutation_id: crypto.randomUUID() })
         warning = result.warning || ''
+      } else if (kind === 'assignment') {
+        const result = await portalRequest('/api/tutor/assignments', 'POST', { ...payload, mutation_id: crypto.randomUUID() })
+        warning = result.warning || ''
       } else if (kind === 'note') {
         const saveResult = await supabase.rpc('save_tutoring_session_note', { note_session_id: note.session_id, private_content: note.content, family_summary: note.parent_summary || null })
         if (saveResult.error) throw new Error('The session note could not be saved. Confirm the security hardening migration has been run and try again.')
@@ -207,7 +211,7 @@ export function TutorDashboard() {
     } catch (saveError) { setBusy(false); setError(saveError instanceof Error ? saveError.message : 'The record could not be saved.'); return }
     setBusy(false)
     const savedLabel = kind === 'note' ? 'Session note' : kind === 'session_update' ? 'Session changes' : kind[0].toUpperCase() + kind.slice(1)
-    setMessage(warning ? `${savedLabel} saved. ${warning}` : `${savedLabel} saved${kind === 'session' || kind === 'session_update' ? ' and the family was notified' : ''}.`)
+    setMessage(warning ? `${savedLabel} saved. ${warning}` : `${savedLabel} saved${kind === 'session' || kind === 'session_update' || kind === 'assignment' ? ' and the family was notified' : ''}.`)
     if (kind === 'session') setSession({ student_id: '', starts_at: '', duration_minutes: '60', meeting_url: '', status: 'scheduled' })
     if (kind === 'session_update') setSessionEdit({ id: '', starts_at: '', duration_minutes: '60', meeting_url: '', status: 'scheduled' })
     if (kind === 'assignment') setAssignment({ student_id: '', title: '', instructions: '', due_at: '' })
@@ -250,11 +254,13 @@ export function TutorDashboard() {
   async function updateAssignmentStatus(id: string, nextStatus: 'assigned' | 'reviewed') {
     if (!supabase || busy) return
     setBusy(true); setError(''); setMessage('')
-    const result = await supabase.rpc('transition_assignment_status', { target_assignment_id: id, next_status: nextStatus })
-    setBusy(false)
-    if (result.error) return setError('The assignment status could not be changed. Confirm the student is still assigned to you and try again.')
-    setMessage(nextStatus === 'reviewed' ? 'Assignment marked as reviewed.' : 'Assignment returned to the student for revisions.')
-    await load()
+    try {
+      const result = await portalRequest(`/api/tutor/assignments/${id}/status`, 'PATCH', { next_status: nextStatus, mutation_id: crypto.randomUUID() })
+      const success = nextStatus === 'reviewed' ? 'Assignment marked as reviewed and the family was notified.' : 'Assignment returned for revisions and the family was notified.'
+      setMessage(result.warning ? `${success} ${result.warning}` : success)
+      await load()
+    } catch (statusError) { setError(statusError instanceof Error ? statusError.message : 'The assignment status could not be changed.') }
+    finally { setBusy(false) }
   }
 
   return <Shell title={`Tutor Dashboard${data.tutor ? ` — ${data.tutor.first_name}` : ''}`}>
