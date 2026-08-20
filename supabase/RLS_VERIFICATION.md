@@ -155,6 +155,28 @@ select
 
 The first five values must be `false`. The final two must remain `true`: those are intentional signed-in RPCs that validate administrator MFA or the tutor/session assignment inside the function.
 
+After `20260820140000_private_privileged_functions.sql`, verify that no exposed wrapper retains definer rights:
+
+```sql
+select
+  n.nspname as schema_name,
+  p.proname,
+  p.prosecdef as security_definer
+from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace
+where p.proname in (
+  'is_admin',
+  'is_student',
+  'is_tutor',
+  'onboard_accepted_application',
+  'save_tutoring_session_note',
+  'session_note_tutor_matches_session'
+)
+order by n.nspname, p.proname;
+```
+
+Every `public` row must show `security_definer = false`. The privileged implementations belong in `private`, which is not exposed through the Data API, and remain responsible for the existing identity, MFA, and assignment checks.
+
 ## Portal invitation isolation
 
 ```sql

@@ -107,6 +107,8 @@ Finally, run [`supabase/migrations/20260820130000_database_security_cleanup.sql`
 
 Then run [`supabase/migrations/20260820133000_rls_policy_performance.sql`](supabase/migrations/20260820133000_rls_policy_performance.sql). It preserves the existing RLS access rules while caching `auth.uid()` once per statement, eliminating repeated per-row authentication lookups reported by the Supabase performance advisor.
 
+Then run [`supabase/migrations/20260820140000_private_privileged_functions.sql`](supabase/migrations/20260820140000_private_privileged_functions.sql). It moves privileged database implementations into a non-exposed `private` schema and retains invoker-rights public wrappers for the existing portal RPC names.
+
 In Supabase Authentication, confirm TOTP multi-factor verification is enabled. The next administrator sign-in displays a QR code and setup key; scan either one with an authenticator app and enter the current six-digit code. Later administrator sign-ins request a fresh six-digit code after the password. If the authenticator device is lost, recover the account through the Supabase administrator console only after verifying the account owner's identity, remove the lost factor, and enroll a new one at the next sign-in.
 
 To enforce the policy automatically, enable Supabase Cron in the dashboard and schedule the cleanup once per day from the SQL Editor:

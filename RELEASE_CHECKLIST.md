@@ -18,6 +18,7 @@ Existing projects that already have the first five migrations should run the rem
 10. [`supabase/migrations/20260820120000_google_calendar_sync.sql`](supabase/migrations/20260820120000_google_calendar_sync.sql)
 11. [`supabase/migrations/20260820130000_database_security_cleanup.sql`](supabase/migrations/20260820130000_database_security_cleanup.sql)
 12. [`supabase/migrations/20260820133000_rls_policy_performance.sql`](supabase/migrations/20260820133000_rls_policy_performance.sql)
+13. [`supabase/migrations/20260820140000_private_privileged_functions.sql`](supabase/migrations/20260820140000_private_privileged_functions.sql)
 
 For a new Supabase project, run the complete order:
 
@@ -38,6 +39,7 @@ For a new Supabase project, run the complete order:
 15. `20260820120000_google_calendar_sync.sql`
 16. `20260820130000_database_security_cleanup.sql`
 17. `20260820133000_rls_policy_performance.sql`
+18. `20260820140000_private_privileged_functions.sql`
 
 Afterward, run the checks in `supabase/RLS_VERIFICATION.md` with disposable test records.
 
