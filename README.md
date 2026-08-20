@@ -36,6 +36,7 @@ VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=your_browser_safe_publishable_key
 VITE_TURNSTILE_SITE_KEY=your_browser_safe_turnstile_site_key
 TURNSTILE_SECRET_KEY=your_server_only_turnstile_secret_key
+REMINDER_CRON_SECRET=your_server_only_random_reminder_secret
 ```
 
 Optional variables:
@@ -98,6 +99,8 @@ Then run [`supabase/migrations/20260818170000_portal_onboarding.sql`](supabase/m
 
 Next, run [`supabase/migrations/20260819120000_tutor_availability.sql`](supabase/migrations/20260819120000_tutor_availability.sql). It adds recurring weekly tutor hours, one-off unavailable blocks, and an atomic scheduling function that prevents overlaps and out-of-hours sessions. Apply this migration before deploying the matching tutor dashboard because it reads the new availability tables immediately.
 
+Then run [`supabase/migrations/20260819152015_session_reminders.sql`](supabase/migrations/20260819152015_session_reminders.sql). It extends the server-only delivery history for idempotent parent, optional student, and tutor reminder emails. Apply it before enabling the reminder Cron job.
+
 Then run [`supabase/migrations/20260820120000_google_calendar_sync.sql`](supabase/migrations/20260820120000_google_calendar_sync.sql). It adds server-only encrypted Google Calendar connections, single-use OAuth state, and non-sensitive synchronization audit records. Apply it before deploying the calendar controls.
 
 In Supabase Authentication, confirm TOTP multi-factor verification is enabled. The next administrator sign-in displays a QR code and setup key; scan either one with an authenticator app and enter the current six-digit code. Later administrator sign-ins request a fresh six-digit code after the password. If the authenticator device is lost, recover the account through the Supabase administrator console only after verifying the account owner's identity, remove the lost factor, and enroll a new one at the next sign-in.
@@ -114,6 +117,50 @@ select cron.schedule(
 
 The example runs daily at 03:17 UTC. Confirm the job under Supabase Dashboard → Integrations → Cron. To test manually, run `select public.purge_expired_tutoring_data();` from the SQL Editor and review the returned deletion counts. Do not shorten the interval below one day.
 
+### Scheduled session reminders
+
+The server sends one reminder to the parent, tutor, and optional student email when a scheduled session first enters the next 25 hours. A session-time-specific event key prevents duplicate delivery when Cron retries. If the session is later rescheduled, the new time receives its own reminder. Cancelled sessions are excluded.
+
+Generate a dedicated secret once:
+
+```powershell
+node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+```
+
+Add the result to Render as `REMINDER_CRON_SECRET` without a `VITE_` prefix. After Render redeploys, store the endpoint and the same secret in Supabase Vault, enable `pg_net`, and create the 15-minute job:
+
+```sql
+create extension if not exists pg_net with schema extensions;
+
+select vault.create_secret(
+  'https://nazarschoolofmath.com/api/cron/session-reminders',
+  'session_reminder_url'
+);
+
+select vault.create_secret(
+  '<PASTE_THE_SAME_REMINDER_CRON_SECRET>',
+  'session_reminder_cron_secret'
+);
+
+select cron.schedule(
+  'send-tutoring-session-reminders',
+  '*/15 * * * *',
+  $$
+  select net.http_post(
+    url := (select decrypted_secret from vault.decrypted_secrets where name = 'session_reminder_url' order by created_at desc limit 1),
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'session_reminder_cron_secret' order by created_at desc limit 1)
+    ),
+    body := jsonb_build_object('scheduled_at', now()),
+    timeout_milliseconds := 10000
+  );
+  $$
+);
+```
+
+Confirm the job under Supabase Dashboard → Integrations → Cron. Keep the secret server-only. The endpoint rejects non-POST requests and missing or incorrect credentials without querying tutoring data.
+
 Add `https://nazarschoolofmath.com/portal` to the Supabase Authentication allowed redirect URLs. The administrator portal creates secure one-time setup links only for accepted families and active tutors. The server creates or finds the Auth user, atomically links exactly one operational record and role, then sends the setup link through Resend. Existing users receive a password-reset link rather than a duplicate account.
 
 Parents can view their students, sessions, assignments, and progress. Students can view their own sessions, assignments, and progress. Administrators can activate an accepted student and assign one active tutor from the application detail panel. Tutors can define weekly availability, block one-off unavailable times, schedule sessions, and create assignments and progress updates only for actively assigned students. Session times are saved as UTC instants and displayed in each viewer's local time zone. Once a tutor adds any weekly hours, scheduled sessions must fit one complete window; overlapping sessions and unavailable blocks are always rejected.
@@ -123,6 +170,7 @@ Workflow email behavior:
 - A tutor scheduling or editing a session emails the linked parent.
 - A parent requesting cancellation or a new time emails the administrator.
 - Approving or declining a request emails both the linked parent and tutor.
+- Supabase Cron sends an approximately one-day reminder to the parent, tutor, and optional student email.
 - Every delivery attempt is recorded in `notification_deliveries`; unique event keys prevent retries from producing duplicate messages.
 - The operational change remains saved if Resend fails, and the administrator dashboard displays the failure details.
 

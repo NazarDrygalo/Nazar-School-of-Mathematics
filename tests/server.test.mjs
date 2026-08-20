@@ -6,6 +6,7 @@ process.env.RESEND_API_KEY = 'placeholder'
 process.env.SUPABASE_URL = 'https://placeholder.example.com'
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'placeholder'
 process.env.TURNSTILE_SECRET_KEY = 'turnstile-test-secret'
+process.env.REMINDER_CRON_SECRET = 'test-reminder-secret-with-at-least-32-characters'
 
 const { renderIndexHtml, requestHandler, verifyTurnstile } = await import('../server.mjs')
 
@@ -128,6 +129,14 @@ test('Google Calendar integration endpoints reject unsupported methods', async (
   assert.equal(authorize.status, 405)
   assert.equal(disconnect.status, 405)
   assert.equal(callback.status, 405)
+})
+
+test('session reminder endpoint requires POST and its scheduler credential', async () => {
+  const wrongMethod = await request({ url: '/api/cron/session-reminders' })
+  const unauthorized = await request({ method: 'POST', url: '/api/cron/session-reminders', headers: { authorization: 'Bearer wrong-secret' } })
+  assert.equal(wrongMethod.status, 405)
+  assert.equal(unauthorized.status, 401)
+  assert.match(unauthorized.body.error, /scheduler credential/i)
 })
 
 test('workflow mutation endpoints require secure server configuration', async () => {

@@ -9,7 +9,7 @@ The platform has four main parts:
 - **Public website:** Presents the school's services, resources, policies, and application form.
 - **Secure portals:** Provide separate dashboards for administrators, parents, students, and tutors.
 - **Supabase:** Stores application and tutoring data, authenticates portal users, and enforces role-based access.
-- **Resend:** Delivers application notifications, parent receipts, and acceptance emails.
+- **Resend:** Delivers application, onboarding, workflow, and scheduled-session reminder emails.
 
 The production application is hosted on Render. The public domain is managed through Cloudflare. Render receives code from the repository's `main` branch and runs the Node server, which also serves the built React application.
 
@@ -158,6 +158,12 @@ An active tutor may authorize the platform to manage tutoring events on the tuto
 
 When a calendar is first connected, up to 100 future scheduled sessions are added. A deterministic Google event ID prevents duplicate events during retries. Scheduled-session edits and approved rescheduling requests update the same event, while cancellations and other non-scheduled statuses remove it. Events are marked private and show only the student's first name and last initial.
 
+### Session reminders
+
+Supabase Cron calls a server-only endpoint every 15 minutes. When a scheduled session first enters the next 25 hours, the server emails the parent, tutor, and the student when a separate student email exists. Reminder messages contain the student’s first name and last initial, the session time, tutor name, and meeting link when available.
+
+Every recipient uses a unique event key containing the session ID, current start time, and recipient role. Repeated Cron calls therefore do not duplicate messages. A rescheduled session has a new start-time key and can receive a new reminder, while cancelled sessions are ignored. Failed deliveries are visible to administrators and may be safely retried; a delivery left in the processing state for more than ten minutes may be reclaimed after an interrupted server request.
+
 Calendar synchronization is deliberately non-blocking. Supabase remains the source of truth: if Google is unavailable or authorization expires, the tutoring change and email workflow still complete and the tutor dashboard displays the calendar error. Disconnecting revokes the stored credential when Google is reachable and always removes the encrypted local credential; existing Google events are left unchanged.
 
 Available session statuses are:
@@ -212,7 +218,7 @@ The platform sends only the workflow messages currently required:
 - A session-change-request email to the administrator.
 - A request-resolution email to the linked parent and tutor.
 
-The platform does not currently send lesson reminders, assignment notifications, progress emails, or general marketing messages.
+Supabase Cron also invokes the secured reminder worker every 15 minutes. The worker sends approximately one-day session reminders to the parent, tutor, and optional student email. The platform does not currently send assignment notifications, progress emails, or general marketing messages.
 
 Workflow changes are saved before email delivery is attempted. Each attempt has a unique event key, delivery state, recipient, timestamp, and error detail in `notification_deliveries`. Retrying the same operation does not resend an already delivered message. Administrators can inspect failed workflow messages in the operations dashboard.
 
@@ -299,14 +305,21 @@ SUPABASE_URL=...
 SUPABASE_SERVICE_ROLE_KEY=...
 VITE_SUPABASE_URL=...
 VITE_SUPABASE_PUBLISHABLE_KEY=...
+VITE_TURNSTILE_SITE_KEY=...
+TURNSTILE_SECRET_KEY=...
+GOOGLE_CALENDAR_CLIENT_ID=...
+GOOGLE_CALENDAR_CLIENT_SECRET=...
+GOOGLE_CALENDAR_TOKEN_ENCRYPTION_KEY=...
+GOOGLE_CALENDAR_REDIRECT_URI=...
+REMINDER_CRON_SECRET=...
 PUBLIC_SITE_ORIGIN=https://nazarschoolofmath.com
 RATE_LIMIT_SECRET=...
 ```
 
-`VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` are browser-safe. `SUPABASE_SERVICE_ROLE_KEY` and `RESEND_API_KEY` are private server credentials and must never use the `VITE_` prefix.
+`VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, and `VITE_TURNSTILE_SITE_KEY` are browser-safe. `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `TURNSTILE_SECRET_KEY`, the Google Calendar secrets, and `REMINDER_CRON_SECRET` are private server credentials and must never use the `VITE_` prefix.
 
 ## 12. Current scope
 
-The platform currently supports applications, automated portal account onboarding, role-based portals, tutor assignments, recurring tutor availability, conflict-aware scheduling, Google Calendar synchronization, assignments, progress tracking, session notes, family change requests, password recovery, email delivery, and automated data retention.
+The platform currently supports applications, automated portal account onboarding, role-based portals, tutor assignments, recurring tutor availability, conflict-aware scheduling, Google Calendar synchronization, scheduled session reminders, assignments, progress tracking, session notes, family change requests, password recovery, email delivery, and automated data retention.
 
 Payments and invoicing are intentionally outside the platform because the school handles them through direct personal arrangements.

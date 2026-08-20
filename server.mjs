@@ -1,11 +1,12 @@
 import { createServer } from 'node:http'
-import { createHmac, randomBytes } from 'node:crypto'
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
 import { extname, isAbsolute, join, normalize, relative } from 'node:path'
 import { createSupabaseAdminClient, isSupabaseConfigured } from './server/supabase.mjs'
 import { createSessionChangeRequest, resolveSessionChangeRequest, saveTutorSession } from './server/workflow-notifications.mjs'
 import { inviteAcceptedFamily, inviteTutor } from './server/portal-onboarding.mjs'
 import { beginGoogleCalendarAuthorization, completeGoogleCalendarAuthorization, disconnectGoogleCalendar, getGoogleCalendarStatus } from './server/google-calendar.mjs'
+import { sendDueSessionReminders } from './server/session-reminders.mjs'
 
 // Local convenience only; hosted platforms should provide these through their environment.
 if (existsSync('.env')) {
@@ -87,6 +88,12 @@ function sendJson(res, status, body, headers = {}) {
   if (res.writableEnded) return
   writeHead(res, status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers })
   res.end(JSON.stringify(body))
+}
+function validCronAuthorization(req) {
+  const secret = process.env.REMINDER_CRON_SECRET || ''
+  const supplied = clean(req.headers.authorization, 10_000).match(/^Bearer\s+(.+)$/i)?.[1] || ''
+  if (secret.length < 32 || supplied.length !== secret.length) return false
+  return timingSafeEqual(Buffer.from(supplied), Buffer.from(secret))
 }
 function clean(value, max = 2000) { return typeof value === 'string' ? value.trim().slice(0, max) : '' }
 function escapeHtml(value) { return value.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[c]) }
@@ -286,6 +293,16 @@ async function secureReadAction(res, action) {
 
 export async function requestHandler(req, res) {
   const requestPath = req.url?.split('?')[0]
+  if (requestPath === '/api/cron/session-reminders') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' })
+    if (!process.env.REMINDER_CRON_SECRET) return sendJson(res, 503, { error: 'Session reminder scheduling is not configured.' })
+    if (!validCronAuthorization(req)) return sendJson(res, 401, { error: 'A valid reminder scheduler credential is required.' })
+    try { return sendJson(res, 200, { ok: true, ...(await sendDueSessionReminders()) }) }
+    catch (error) {
+      console.error('Session reminder processing failed:', error.message)
+      return sendJson(res, error.status || 500, { error: error.message || 'Session reminders could not be processed.' })
+    }
+  }
   if (requestPath === '/api/integrations/google-calendar/callback') {
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed.' })
     try {

@@ -26,7 +26,7 @@ export async function requireRole(req, expectedRole) {
   return { supabase, user: authData.user }
 }
 
-async function sendTrackedEmail(supabase, message) {
+export async function sendTrackedEmail(supabase, message) {
   let delivery
   const { data: inserted, error: insertError } = await supabase.from('notification_deliveries').insert({
     event_key: message.eventKey,
@@ -38,9 +38,14 @@ async function sendTrackedEmail(supabase, message) {
     status: 'sending'
   }).select('id,status').single()
   if (insertError?.code === '23505') {
-    const { data: existing } = await supabase.from('notification_deliveries').select('id,status').eq('event_key', message.eventKey).maybeSingle()
-    if (existing?.status === 'sent' || existing?.status === 'sending') return { status: existing.status === 'sent' ? 'already_sent' : 'processing' }
-    const { data: claimed } = await supabase.from('notification_deliveries').update({ status: 'sending', attempted_at: new Date().toISOString(), error: null }).eq('id', existing?.id).eq('status', 'failed').select('id,status').maybeSingle()
+    const { data: existing } = await supabase.from('notification_deliveries').select('id,status,attempted_at').eq('event_key', message.eventKey).maybeSingle()
+    if (!existing) throw Object.assign(new Error('The existing email-delivery claim could not be loaded.'), { status: 503 })
+    if (existing?.status === 'sent') return { status: 'already_sent' }
+    const staleBefore = new Date(Date.now() - 10 * 60_000).toISOString()
+    if (existing?.status === 'sending' && existing.attempted_at >= staleBefore) return { status: 'processing' }
+    let claim = supabase.from('notification_deliveries').update({ status: 'sending', attempted_at: new Date().toISOString(), error: null }).eq('id', existing?.id)
+    claim = existing?.status === 'failed' ? claim.eq('status', 'failed') : claim.eq('status', 'sending').lt('attempted_at', staleBefore)
+    const { data: claimed } = await claim.select('id,status').maybeSingle()
     if (!claimed) return { status: 'processing' }
     delivery = claimed
   } else if (insertError) {
@@ -56,8 +61,9 @@ async function sendTrackedEmail(supabase, message) {
   try {
     response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: fromAddress(), to: [message.to], reply_to: recipient(), subject: message.subject, html: message.html, text: message.text })
+      headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json', 'Idempotency-Key': String(message.eventKey).slice(0, 256) },
+      body: JSON.stringify({ from: fromAddress(), to: [message.to], reply_to: recipient(), subject: message.subject, html: message.html, text: message.text }),
+      signal: AbortSignal.timeout(8000)
     })
   } catch {
     await supabase.from('notification_deliveries').update({ status: 'failed', attempted_at: new Date().toISOString(), error: 'The Resend request could not be completed.' }).eq('id', delivery.id)

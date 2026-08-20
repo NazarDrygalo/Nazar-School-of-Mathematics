@@ -117,6 +117,27 @@ rollback;
 
 Repeat the administrator function call as a parent or tutor and confirm it fails with `Administrator access is required.` Never use production family records for RLS tests.
 
+## Session reminder delivery isolation
+
+```sql
+begin;
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'PARENT_AUTH_UUID', true);
+
+-- Must return no rows: delivery history is administrator-only.
+select * from public.notification_deliveries;
+
+-- Must fail: only the server role may create reminder delivery claims.
+insert into public.notification_deliveries (
+  event_key, event_type, session_id, recipient_role, recipient_email
+) values (
+  'rls-test-reminder', 'session_reminder', 'OWN_SESSION_UUID', 'parent', 'parent@example.com'
+);
+rollback;
+```
+
+Repeat the read and insert as a student and tutor. Neither role may read or write delivery history. An MFA-authenticated administrator may read failures but must still be unable to insert or update them directly.
+
 ## Portal invitation isolation
 
 ```sql

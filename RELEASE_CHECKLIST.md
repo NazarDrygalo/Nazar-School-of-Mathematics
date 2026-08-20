@@ -14,7 +14,8 @@ Existing projects that already have the first five migrations should run the rem
 6. [`supabase/migrations/20260818_admin_mfa.sql`](supabase/migrations/20260818_admin_mfa.sql)
 7. [`supabase/migrations/20260818170000_portal_onboarding.sql`](supabase/migrations/20260818170000_portal_onboarding.sql)
 8. [`supabase/migrations/20260819120000_tutor_availability.sql`](supabase/migrations/20260819120000_tutor_availability.sql)
-9. [`supabase/migrations/20260820120000_google_calendar_sync.sql`](supabase/migrations/20260820120000_google_calendar_sync.sql)
+9. [`supabase/migrations/20260819152015_session_reminders.sql`](supabase/migrations/20260819152015_session_reminders.sql)
+10. [`supabase/migrations/20260820120000_google_calendar_sync.sql`](supabase/migrations/20260820120000_google_calendar_sync.sql)
 
 For a new Supabase project, run the complete order:
 
@@ -31,13 +32,18 @@ For a new Supabase project, run the complete order:
 11. `20260818_admin_mfa.sql`
 12. `20260818170000_portal_onboarding.sql`
 13. `20260819120000_tutor_availability.sql`
-14. `20260820120000_google_calendar_sync.sql`
+14. `20260819152015_session_reminders.sql`
+15. `20260820120000_google_calendar_sync.sql`
 
 Afterward, run the checks in `supabase/RLS_VERIFICATION.md` with disposable test records.
 
 ## 2. Data retention schedule
 
 Enable Supabase Cron and create the daily job documented in `README.md`. Run `select public.purge_expired_tutoring_data();` once manually and inspect the returned counts before relying on the schedule.
+
+## 2a. Session reminder schedule
+
+Generate and add `REMINDER_CRON_SECRET` in Render, deploy, store the endpoint and matching secret in Supabase Vault, and create the 15-minute HTTP Cron job documented in `README.md`. Never use a `VITE_` prefix for this secret.
 
 ## 3. Supabase Authentication
 
@@ -67,6 +73,7 @@ Confirm these values exist in Render and are not exposed through `VITE_` variabl
 - `GOOGLE_CALENDAR_CLIENT_SECRET`
 - `GOOGLE_CALENDAR_TOKEN_ENCRYPTION_KEY`
 - `GOOGLE_CALENDAR_REDIRECT_URI`
+- `REMINDER_CRON_SECRET`
 
 Also set `PUBLIC_SITE_ORIGIN=https://nazarschoolofmath.com`. `RATE_LIMIT_SECRET` is optional; when omitted, the server uses the server-only Supabase service-role key to create irreversible rate-limit hashes.
 
@@ -98,6 +105,9 @@ Check desktop and mobile layouts at minimum on Home, Resources, Apply, Portal Lo
 - Schedule and edit a session inside availability, then confirm overlapping, blocked, and out-of-hours sessions are rejected.
 - Confirm the scheduled event appears once in the tutor's primary Google Calendar, edits move it, and cancellation removes it.
 - Confirm the session appears with correct local time for parent and student.
+- Create a disposable session between 24 and 25 hours away, invoke the secured reminder endpoint, and confirm one reminder reaches the parent and tutor plus the student when a separate student email exists.
+- Invoke the endpoint again and confirm no recipient receives a duplicate reminder.
+- Confirm a cancelled session in the same window sends no reminder.
 - Submit a parent rescheduling request more than three days before the lesson.
 - Confirm a request inside three days is rejected.
 - Approve the valid request as admin and confirm the session time changes without changing its duration.
@@ -117,5 +127,6 @@ After all earlier checks pass, commit and push to `main` to trigger Render. Then
 - Portal login routes admin, parent, student, and tutor correctly.
 - Password-reset links return to the production site.
 - No browser console errors or failed API requests appear.
+- Supabase Cron shows successful `send-tutoring-session-reminders` runs and reminder delivery failures, if any, appear in the administrator dashboard.
 
 Record the test application IDs and delete disposable records after verification.
