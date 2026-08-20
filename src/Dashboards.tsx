@@ -201,6 +201,9 @@ export function TutorDashboard() {
       } else if (kind === 'assignment') {
         const result = await portalRequest('/api/tutor/assignments', 'POST', { ...payload, mutation_id: crypto.randomUUID() })
         warning = result.warning || ''
+      } else if (kind === 'progress') {
+        const result = await portalRequest('/api/tutor/progress', 'POST', { ...payload, mutation_id: crypto.randomUUID() })
+        warning = result.warning || ''
       } else if (kind === 'note') {
         const saveResult = await supabase.rpc('save_tutoring_session_note', { note_session_id: note.session_id, private_content: note.content, family_summary: note.parent_summary || null })
         if (saveResult.error) throw new Error('The session note could not be saved. Confirm the security hardening migration has been run and try again.')
@@ -211,7 +214,7 @@ export function TutorDashboard() {
     } catch (saveError) { setBusy(false); setError(saveError instanceof Error ? saveError.message : 'The record could not be saved.'); return }
     setBusy(false)
     const savedLabel = kind === 'note' ? 'Session note' : kind === 'session_update' ? 'Session changes' : kind[0].toUpperCase() + kind.slice(1)
-    setMessage(warning ? `${savedLabel} saved. ${warning}` : `${savedLabel} saved${kind === 'session' || kind === 'session_update' || kind === 'assignment' ? ' and the family was notified' : ''}.`)
+    setMessage(warning ? `${savedLabel} saved. ${warning}` : `${savedLabel} saved${kind === 'session' || kind === 'session_update' || kind === 'assignment' || kind === 'progress' ? ' and the family was notified' : ''}.`)
     if (kind === 'session') setSession({ student_id: '', starts_at: '', duration_minutes: '60', meeting_url: '', status: 'scheduled' })
     if (kind === 'session_update') setSessionEdit({ id: '', starts_at: '', duration_minutes: '60', meeting_url: '', status: 'scheduled' })
     if (kind === 'assignment') setAssignment({ student_id: '', title: '', instructions: '', due_at: '' })

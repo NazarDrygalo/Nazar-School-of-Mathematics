@@ -21,6 +21,7 @@ Existing projects that already have the first five migrations should run the rem
 13. [`supabase/migrations/20260820140000_private_privileged_functions.sql`](supabase/migrations/20260820140000_private_privileged_functions.sql)
 14. [`supabase/migrations/20260820203358_assignment_completion_workflow.sql`](supabase/migrations/20260820203358_assignment_completion_workflow.sql)
 15. [`supabase/migrations/20260820213451_assignment_email_notifications.sql`](supabase/migrations/20260820213451_assignment_email_notifications.sql)
+16. [`supabase/migrations/20260820222420_progress_email_notifications.sql`](supabase/migrations/20260820222420_progress_email_notifications.sql)
 
 For a new Supabase project, run the complete order:
 
@@ -44,6 +45,7 @@ For a new Supabase project, run the complete order:
 18. `20260820140000_private_privileged_functions.sql`
 19. `20260820203358_assignment_completion_workflow.sql`
 20. `20260820213451_assignment_email_notifications.sql`
+21. `20260820222420_progress_email_notifications.sql`
 
 Afterward, run the checks in `supabase/RLS_VERIFICATION.md` with disposable test records.
 
@@ -122,6 +124,7 @@ Check desktop and mobile layouts at minimum on Home, Resources, Apply, Portal Lo
 - Confirm assignment creation emails the parent and optional student address exactly once, then confirm submission emails the assigned tutor exactly once.
 - Mark the assignment reviewed, then return it for revisions and confirm the student and parent see each status change and receive each matching email exactly once.
 - Confirm a different student and an unassigned tutor cannot change the assignment status.
+- Record a progress update as the tutor; confirm the parent and optional student address receive it exactly once and an unassigned tutor cannot create one.
 - Submit a parent rescheduling request more than three days before the lesson.
 - Confirm a request inside three days is rejected.
 - Approve the valid request as admin and confirm the session time changes without changing its duration.

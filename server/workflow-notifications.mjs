@@ -34,6 +34,7 @@ export async function sendTrackedEmail(supabase, message) {
     session_id: message.sessionId || null,
     change_request_id: message.changeRequestId || null,
     assignment_id: message.assignmentId || null,
+    progress_id: message.progressId || null,
     recipient_role: message.recipientRole,
     recipient_email: message.to,
     status: 'sending'
@@ -231,7 +232,7 @@ async function assignmentContext(supabase, assignment) {
   return { student, parent, tutor: tutorResult.data }
 }
 
-function familyAssignmentRecipients(student, parent) {
+function familyWorkflowRecipients(student, parent) {
   const recipients = [{ role: 'parent', email: clean(parent.email).toLowerCase(), firstName: parent.first_name }]
   const studentEmail = clean(student.email).toLowerCase()
   if (studentEmail && studentEmail !== recipients[0].email) recipients.push({ role: 'student', email: studentEmail, firstName: student.first_name })
@@ -242,7 +243,7 @@ async function notifyAssignmentFamily(supabase, assignment, context, eventType, 
   const studentName = `${context.student.first_name} ${context.student.last_name}`
   const tutorName = `${context.tutor.first_name} ${context.tutor.last_name}`
   const version = assignment.last_transition_id || assignment.status_changed_at || assignment.updated_at
-  const deliveries = await Promise.all(familyAssignmentRecipients(context.student, context.parent).map(target => sendTrackedEmail(supabase, {
+  const deliveries = await Promise.all(familyWorkflowRecipients(context.student, context.parent).map(target => sendTrackedEmail(supabase, {
     eventKey: `assignment:${assignment.id}:${eventType}:${version}:${target.role}`,
     eventType,
     assignmentId: assignment.id,
@@ -321,4 +322,41 @@ export async function changeAssignmentStatus(req, assignmentId, body, actorRole)
   }
   const warnings = deliveries.map(delivery => delivery.warning).filter(Boolean)
   return { ok: true, assignment, emails: deliveries.map(delivery => delivery.status), warning: warnings.join(' ') || undefined }
+}
+
+export async function createTutorProgress(req, body) {
+  const { supabase, user } = await requireRole(req, 'tutor')
+  const progressId = clean(body?.mutation_id, 40)
+  const studentId = clean(body?.student_id, 40)
+  const area = clean(body?.area, 200)
+  const notes = clean(body?.notes, 5000)
+  const masteryLevel = Number(body?.mastery_level)
+  if (!uuidPattern.test(progressId) || !uuidPattern.test(studentId)) throw Object.assign(new Error('A valid progress update and student are required.'), { status: 400 })
+  if (!area) throw Object.assign(new Error('Enter an area of study.'), { status: 400 })
+  if (!Number.isInteger(masteryLevel) || masteryLevel < 1 || masteryLevel > 5) throw Object.assign(new Error('Mastery must be between one and five.'), { status: 400 })
+  const tutor = await tutorForUser(supabase, user.id)
+  const { data: progress, error } = await supabase.rpc('create_student_progress_server', {
+    p_progress_id: progressId,
+    p_student_id: studentId,
+    p_tutor_id: tutor.id,
+    p_area: area,
+    p_mastery_level: masteryLevel,
+    p_notes: notes || null,
+    p_actor_user_id: user.id
+  })
+  if (error || !progress) throw Object.assign(new Error('The progress update could not be saved. Confirm the progress-notifications migration has been run and the student is still assigned to you.'), { status: 409 })
+  const context = await assignmentContext(supabase, progress)
+  const studentName = `${context.student.first_name} ${context.student.last_name}`
+  const deliveries = await Promise.all(familyWorkflowRecipients(context.student, context.parent).map(target => sendTrackedEmail(supabase, {
+    eventKey: `progress:${progress.id}:recorded:${target.role}`,
+    eventType: 'progress_recorded',
+    progressId: progress.id,
+    recipientRole: target.role,
+    to: target.email,
+    subject: `Progress update | ${studentName}`,
+    text: `Hello ${target.firstName},\n\n${context.tutor.first_name} recorded a new progress update for ${studentName}.\n\nArea: ${progress.area}\nMastery: ${progress.mastery_level}/5\nNotes: ${progress.notes || 'No additional notes.'}\n\nPlease sign in to the portal to review the current progress history.\n\nNazar's School of Mathematics`,
+    html: `<p>Hello ${escapeHtml(target.firstName)},</p><p>${escapeHtml(context.tutor.first_name)} recorded a new progress update for <strong>${escapeHtml(studentName)}</strong>.</p><p><strong>Area:</strong> ${escapeHtml(progress.area)}<br><strong>Mastery:</strong> ${escapeHtml(progress.mastery_level)}/5<br><strong>Notes:</strong> ${escapeHtml(progress.notes || 'No additional notes.')}</p><p>Please sign in to the portal to review the current progress history.</p><p>Nazar's School of Mathematics</p>`
+  })))
+  const warnings = deliveries.map(delivery => delivery.warning).filter(Boolean)
+  return { ok: true, progress, emails: deliveries.map(delivery => delivery.status), warning: warnings.join(' ') || undefined }
 }
