@@ -3,6 +3,30 @@ import { supabase } from './lib/supabase'
 import { navigateTo } from './routes'
 
 type RecordItem = Record<string, any>
+type PortalRole = 'parent' | 'student' | 'tutor'
+type EmailPreferenceKey = 'session_updates' | 'session_reminders' | 'assignment_updates' | 'progress_updates' | 'weekly_digest'
+type EmailPreferencesState = Record<EmailPreferenceKey, boolean>
+const defaultEmailPreferences: EmailPreferencesState = { session_updates: true, session_reminders: true, assignment_updates: true, progress_updates: true, weekly_digest: true }
+const emailPreferenceOptions: Record<PortalRole, { key: EmailPreferenceKey; label: string; detail: string }[]> = {
+  parent: [
+    { key: 'session_updates', label: 'Session updates', detail: 'Schedule changes and request decisions.' },
+    { key: 'session_reminders', label: 'Session reminders', detail: 'Approximately one day before a lesson.' },
+    { key: 'assignment_updates', label: 'Assignment updates', detail: 'New, reviewed, or returned work.' },
+    { key: 'progress_updates', label: 'Progress updates', detail: 'New tutor progress notes.' },
+    { key: 'weekly_digest', label: 'Weekly summary', detail: 'Monday summary of recent activity.' }
+  ],
+  student: [
+    { key: 'session_reminders', label: 'Session reminders', detail: 'Approximately one day before a lesson.' },
+    { key: 'assignment_updates', label: 'Assignment updates', detail: 'New, reviewed, or returned work.' },
+    { key: 'progress_updates', label: 'Progress updates', detail: 'New tutor progress notes.' },
+    { key: 'weekly_digest', label: 'Weekly summary', detail: 'Monday summary of recent activity.' }
+  ],
+  tutor: [
+    { key: 'session_updates', label: 'Session updates', detail: 'Decisions on family schedule requests.' },
+    { key: 'session_reminders', label: 'Session reminders', detail: 'Approximately one day before a lesson.' },
+    { key: 'assignment_updates', label: 'Assignment submissions', detail: 'When a student submits work for review.' }
+  ]
+}
 const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York'
 const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const displayDate = (value?: string) => value ? new Date(value).toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }) : 'Not scheduled'
@@ -14,6 +38,42 @@ function Shell({ title, children }: { title: string; children: ReactNode }) {
 }
 function Notice({ children }: { children: ReactNode }) { return <p className="dashboard-message">{children}</p> }
 function List({ title, items, render }: { title: string; items: RecordItem[]; render: (item: RecordItem) => ReactNode }) { return <section className="portal-panel"><h2>{title}</h2>{items.length ? <div className="portal-list">{items.map(render)}</div> : <p className="empty-state">Nothing has been added yet.</p>}</section> }
+function EmailPreferences({ role }: { role: PortalRole }) {
+  const [preferences, setPreferences] = useState<EmailPreferencesState>(defaultEmailPreferences)
+  const [userId, setUserId] = useState('')
+  const [busy, setBusy] = useState(true)
+  const [status, setStatus] = useState('')
+  useEffect(() => {
+    let active = true
+    async function loadPreferences() {
+      if (!supabase) { if (active) { setStatus('Email preferences are unavailable.'); setBusy(false) }; return }
+      const { data: session } = await supabase.auth.getSession()
+      if (!session.session) { if (active) { setStatus('Sign in again to manage email preferences.'); setBusy(false) }; return }
+      const id = session.session.user.id
+      const { data, error } = await supabase.from('email_notification_preferences').select('session_updates,session_reminders,assignment_updates,progress_updates,weekly_digest').eq('user_id', id).maybeSingle()
+      if (!active) return
+      setUserId(id)
+      if (error) setStatus('Email preferences could not be loaded. Confirm the latest migration has been run.')
+      else if (data) setPreferences({ ...defaultEmailPreferences, ...data })
+      setBusy(false)
+    }
+    void loadPreferences()
+    return () => { active = false }
+  }, [])
+  async function save(event: FormEvent) {
+    event.preventDefault()
+    if (!supabase || !userId || busy) return
+    setBusy(true); setStatus('')
+    const { error } = await supabase.from('email_notification_preferences').upsert({ user_id: userId, ...preferences }, { onConflict: 'user_id' })
+    setStatus(error ? 'Email preferences could not be saved. Please try again.' : 'Email preferences saved.')
+    setBusy(false)
+  }
+  return <form className="email-preferences" onSubmit={save}>
+    <div><p className="eyebrow">Notifications</p><h2>Email preferences</h2><p>Choose optional tutoring emails. Account recovery and security messages always remain enabled.</p></div>
+    <div className="email-preference-options">{emailPreferenceOptions[role].map(option => <label key={option.key}><input type="checkbox" checked={preferences[option.key]} disabled={busy} onChange={event => setPreferences({ ...preferences, [option.key]: event.target.checked })} /><span><b>{option.label}</b><small>{option.detail}</small></span></label>)}</div>
+    <div className="email-preference-actions"><button className="button" disabled={busy || !userId}>{busy ? 'Loading…' : 'Save preferences'}</button>{status && <span role="status">{status}</span>}</div>
+  </form>
+}
 async function hasPortalRole(expectedRole: 'parent' | 'student' | 'tutor') {
   if (!supabase) return false
   const { data: session } = await supabase.auth.getSession()
@@ -75,6 +135,7 @@ export function ParentDashboard() {
       <List title="Progress updates" items={data.progress} render={entry => <article key={entry.id}><b>{entry.area}</b><span>{entry.students?.first_name} {entry.students?.last_name} · Mastery {entry.mastery_level || '—'}/5</span><small>{entry.notes || 'No notes provided.'}</small></article>} />
       <List title="Tutor summaries" items={data.summaries} render={summary => <article key={summary.session_id}><b>{summary.tutoring_sessions?.students?.first_name} {summary.tutoring_sessions?.students?.last_name}</b><span>{displayDate(summary.tutoring_sessions?.starts_at)}</span><small>{summary.summary}</small></article>} />
     </div>
+    <EmailPreferences role="parent" />
     <div className="session-tools">
       <ToolForm title="Request a cancellation or new time" onSubmit={requestChange} busy={busy}><p className="policy-note">Please submit requests at least three days before the scheduled lesson. Requests remain pending until reviewed.</p><label>Session<select required value={changeRequest.session_id} onChange={event => setChangeRequest({ ...changeRequest, session_id: event.target.value })}><option value="">Select an eligible session</option>{eligibleSessions.map((session: RecordItem) => <option key={session.id} value={session.id}>{session.students?.first_name} — {displayDate(session.starts_at)}</option>)}</select></label><label>Request type<select value={changeRequest.request_type} onChange={event => setChangeRequest({ ...changeRequest, request_type: event.target.value, requested_starts_at: '' })}><option value="reschedule">Request a new time</option><option value="cancel">Request cancellation</option></select></label>{changeRequest.request_type === 'reschedule' && <label>Requested date and time <small>Shown in {browserTimeZone}</small><input required type="datetime-local" value={changeRequest.requested_starts_at} onChange={event => setChangeRequest({ ...changeRequest, requested_starts_at: event.target.value })} /></label>}<label>Optional note<textarea value={changeRequest.reason} onChange={event => setChangeRequest({ ...changeRequest, reason: event.target.value })} /></label></ToolForm>
       <List title="Change requests" items={data.requests} render={request => <article key={request.id}><b>{request.request_type === 'cancel' ? 'Cancellation request' : 'New-time request'}</b><span>{request.tutoring_sessions?.students?.first_name} · {request.status}</span><small>{request.requested_starts_at ? `Requested: ${displayDate(request.requested_starts_at)}` : `Session: ${displayDate(request.tutoring_sessions?.starts_at)}`}</small></article>} />
@@ -107,7 +168,7 @@ export function StudentDashboard() {
     setBusy(true); setError(''); setMessage('')
     try {
       const result = await portalRequest(`/api/student/assignments/${id}/status`, 'PATCH', { next_status: 'submitted', mutation_id: crypto.randomUUID() })
-      setMessage(result.warning ? `Assignment submitted for tutor review. ${result.warning}` : 'Assignment submitted for tutor review and your tutor was notified.')
+      setMessage(result.warning ? `Assignment submitted for tutor review. ${result.warning}` : 'Assignment submitted for tutor review. Email preferences were applied.')
       await load()
     } catch (submitError) { setError(submitError instanceof Error ? submitError.message : 'The assignment could not be submitted.') }
     finally { setBusy(false) }
@@ -120,6 +181,7 @@ export function StudentDashboard() {
       <List title="Assignments" items={data.assignments} render={assignment => <article key={assignment.id}><b>{assignment.title}</b><span>{assignment.status} · {assignment.due_at ? `Due ${displayDate(assignment.due_at)}` : 'No due date'}</span><small>{assignment.instructions || 'No additional instructions.'}</small>{assignment.status === 'assigned' && <div className="assignment-actions"><button type="button" className="remove-button" disabled={busy} onClick={() => void submitAssignment(assignment.id)}>Mark complete</button></div>}{assignment.status === 'submitted' && <small>Submitted {displayDate(assignment.submitted_at)} · Awaiting tutor review</small>}{assignment.status === 'reviewed' && <small>Reviewed {displayDate(assignment.reviewed_at)}</small>}</article>} />
       <List title="Progress" items={data.progress} render={entry => <article key={entry.id}><b>{entry.area}</b><span>Mastery {entry.mastery_level || '—'}/5</span><small>{entry.notes || 'No notes provided.'}</small></article>} />
     </div>
+    <EmailPreferences role="student" />
   </Shell>
 }
 
@@ -214,7 +276,7 @@ export function TutorDashboard() {
     } catch (saveError) { setBusy(false); setError(saveError instanceof Error ? saveError.message : 'The record could not be saved.'); return }
     setBusy(false)
     const savedLabel = kind === 'note' ? 'Session note' : kind === 'session_update' ? 'Session changes' : kind[0].toUpperCase() + kind.slice(1)
-    setMessage(warning ? `${savedLabel} saved. ${warning}` : `${savedLabel} saved${kind === 'session' || kind === 'session_update' || kind === 'assignment' || kind === 'progress' ? ' and the family was notified' : ''}.`)
+    setMessage(warning ? `${savedLabel} saved. ${warning}` : `${savedLabel} saved${kind === 'session' || kind === 'session_update' || kind === 'assignment' || kind === 'progress' ? '. Email preferences were applied' : ''}.`)
     if (kind === 'session') setSession({ student_id: '', starts_at: '', duration_minutes: '60', meeting_url: '', status: 'scheduled' })
     if (kind === 'session_update') setSessionEdit({ id: '', starts_at: '', duration_minutes: '60', meeting_url: '', status: 'scheduled' })
     if (kind === 'assignment') setAssignment({ student_id: '', title: '', instructions: '', due_at: '' })
@@ -259,7 +321,7 @@ export function TutorDashboard() {
     setBusy(true); setError(''); setMessage('')
     try {
       const result = await portalRequest(`/api/tutor/assignments/${id}/status`, 'PATCH', { next_status: nextStatus, mutation_id: crypto.randomUUID() })
-      const success = nextStatus === 'reviewed' ? 'Assignment marked as reviewed and the family was notified.' : 'Assignment returned for revisions and the family was notified.'
+      const success = nextStatus === 'reviewed' ? 'Assignment marked as reviewed. Email preferences were applied.' : 'Assignment returned for revisions. Email preferences were applied.'
       setMessage(result.warning ? `${success} ${result.warning}` : success)
       await load()
     } catch (statusError) { setError(statusError instanceof Error ? statusError.message : 'The assignment status could not be changed.') }
@@ -273,6 +335,7 @@ export function TutorDashboard() {
       <List title="Assigned students" items={data.students} render={student => <article key={student.id}><b>{student.first_name} {student.last_name}</b><span>{student.grade || 'Grade not listed'} · {student.current_course || 'Course not listed'}</span></article>} />
       <List title="Assignments to review" items={data.assignments} render={item => <article key={item.id}><b>{item.title}</b><span>{item.students?.first_name} {item.students?.last_name} · {item.status}</span><small>{item.due_at ? `Due ${displayDate(item.due_at)}` : 'No due date'}</small>{item.status === 'submitted' && <small>Submitted {displayDate(item.submitted_at)}</small>}{item.status === 'reviewed' && <small>Reviewed {displayDate(item.reviewed_at)}</small>}{(item.status === 'submitted' || item.status === 'reviewed') && <div className="assignment-actions">{item.status === 'submitted' && <button type="button" className="remove-button" disabled={busy} onClick={() => void updateAssignmentStatus(item.id, 'reviewed')}>Mark reviewed</button>}<button type="button" className="remove-button" disabled={busy} onClick={() => void updateAssignmentStatus(item.id, 'assigned')}>Return for revisions</button></div>}</article>} />
     </div>
+    <EmailPreferences role="tutor" />
     <section className="availability-section">
       <div className="section-title"><p className="eyebrow">Calendar controls</p><h2>Your availability</h2><p>Add each weekly window when sessions may be scheduled. One-off unavailable blocks override those windows.</p></div>
       <div className="calendar-connection">

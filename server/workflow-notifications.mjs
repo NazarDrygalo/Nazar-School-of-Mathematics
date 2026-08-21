@@ -7,6 +7,7 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}
 const clean = (value, max = 2000) => typeof value === 'string' ? value.trim().slice(0, max) : ''
 const escapeHtml = value => String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[character])
 const sessionTime = value => new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', dateStyle: 'long', timeStyle: 'short' }).format(new Date(value)) + ' Eastern Time'
+const emailPreferenceKeys = new Set(['session_updates', 'session_reminders', 'assignment_updates', 'progress_updates', 'weekly_digest'])
 
 export async function requireRole(req, expectedRole) {
   if (!isSupabaseConfigured()) throw Object.assign(new Error('The secure workflow API is not configured.'), { status: 503 })
@@ -27,6 +28,12 @@ export async function requireRole(req, expectedRole) {
 }
 
 export async function sendTrackedEmail(supabase, message) {
+  if (message.preferenceUserId) {
+    if (!emailPreferenceKeys.has(message.preferenceKey) || !uuidPattern.test(message.preferenceUserId || '')) throw Object.assign(new Error('The email preference request is invalid.'), { status: 500 })
+    const { data: preferences, error: preferenceError } = await supabase.from('email_notification_preferences').select(message.preferenceKey).eq('user_id', message.preferenceUserId).maybeSingle()
+    if (preferenceError) return { status: 'failed', warning: 'The workflow was saved, but email preferences could not be checked.' }
+    if (preferences?.[message.preferenceKey] === false) return { status: 'skipped' }
+  }
   let delivery
   const { data: inserted, error: insertError } = await supabase.from('notification_deliveries').insert({
     event_key: message.eventKey,
@@ -80,7 +87,7 @@ export async function sendTrackedEmail(supabase, message) {
 }
 
 async function familyForStudent(supabase, studentId) {
-  const { data: student, error } = await supabase.from('students').select('id,first_name,last_name,parent_id,email').eq('id', studentId).maybeSingle()
+  const { data: student, error } = await supabase.from('students').select('id,auth_user_id,first_name,last_name,parent_id,email').eq('id', studentId).maybeSingle()
   if (error || !student) throw Object.assign(new Error('The student record could not be loaded.'), { status: 404 })
   const { data: parent } = await supabase.from('parents').select('id,auth_user_id,first_name,last_name,email').eq('id', student.parent_id).maybeSingle()
   if (!parent) throw Object.assign(new Error('The family record could not be loaded.'), { status: 404 })
@@ -88,7 +95,7 @@ async function familyForStudent(supabase, studentId) {
 }
 
 async function tutorForUser(supabase, userId) {
-  const { data: tutor } = await supabase.from('tutors').select('id,first_name,last_name,email,active').eq('auth_user_id', userId).maybeSingle()
+  const { data: tutor } = await supabase.from('tutors').select('id,auth_user_id,first_name,last_name,email,active').eq('auth_user_id', userId).maybeSingle()
   if (!tutor?.active) throw Object.assign(new Error('An active tutor record is required.'), { status: 403 })
   return tutor
 }
@@ -157,7 +164,7 @@ export async function saveTutorSession(req, body, sessionId = null) {
   const { student, parent } = await familyForStudent(supabase, studentId)
   const action = sessionId ? 'updated' : 'created'
   const email = familySessionEmail({ action, session, student, tutor })
-  const delivery = await sendTrackedEmail(supabase, { eventKey: `session:${session.id}:${action}:${mutationId}:parent`, eventType: `session_${action}`, sessionId: session.id, recipientRole: 'parent', to: parent.email, ...email })
+  const delivery = await sendTrackedEmail(supabase, { eventKey: `session:${session.id}:${action}:${mutationId}:parent`, eventType: `session_${action}`, sessionId: session.id, recipientRole: 'parent', to: parent.email, preferenceKey: 'session_updates', preferenceUserId: parent.auth_user_id, ...email })
   const calendar = await syncSessionToGoogleCalendar(supabase, session)
   const warnings = [delivery.warning, calendar.warning].filter(Boolean)
   return { ok: true, session, email: delivery.status, calendar: calendar.status, warning: warnings.join(' ') || undefined, changed: !previous || JSON.stringify(previous) !== JSON.stringify(session) }
@@ -209,13 +216,13 @@ export async function resolveSessionChangeRequest(req, requestId, body) {
     if (error) throw Object.assign(new Error('The session request could not be resolved. Confirm the workflow-notifications migration has been run.'), { status: 502 })
   } else if (changeRequest.status !== resolution) throw Object.assign(new Error(`This request was already ${changeRequest.status}.`), { status: 409 })
   const { data: session } = await supabase.from('tutoring_sessions').select('id,student_id,tutor_id,starts_at,ends_at,status,meeting_url').eq('id', changeRequest.session_id).single()
-  const [{ student, parent }, tutorResult] = await Promise.all([familyForStudent(supabase, session.student_id), supabase.from('tutors').select('first_name,last_name,email').eq('id', session.tutor_id).single()])
+  const [{ student, parent }, tutorResult] = await Promise.all([familyForStudent(supabase, session.student_id), supabase.from('tutors').select('auth_user_id,first_name,last_name,email').eq('id', session.tutor_id).single()])
   const tutor = tutorResult.data
   const requestLabel = changeRequest.request_type === 'cancel' ? 'cancellation request' : 'new-time request'
   const outcome = resolution === 'approved' ? `approved. The session is now ${session.status}${session.status === 'scheduled' ? ` for ${sessionTime(session.starts_at)}` : ''}.` : 'declined. The existing session remains unchanged.'
   const base = { eventType: 'change_resolved', sessionId: session.id, changeRequestId: requestId, subject: `Session request ${resolution} | ${student.first_name} ${student.last_name}` }
-  const familyDelivery = await sendTrackedEmail(supabase, { ...base, eventKey: `request:${requestId}:resolved:${resolution}:parent`, recipientRole: 'parent', to: parent.email, text: `Hello,\n\nYour ${requestLabel} for ${student.first_name} was ${outcome}\n\nPlease review the parent portal for the current schedule.\n\nNazar's School of Mathematics`, html: `<p>Hello,</p><p>Your ${escapeHtml(requestLabel)} for <strong>${escapeHtml(student.first_name)}</strong> was ${escapeHtml(outcome)}</p><p>Please review the parent portal for the current schedule.</p><p>Nazar's School of Mathematics</p>` })
-  const tutorDelivery = tutor?.email ? await sendTrackedEmail(supabase, { ...base, eventKey: `request:${requestId}:resolved:${resolution}:tutor`, recipientRole: 'tutor', to: tutor.email, text: `Hello ${tutor.first_name},\n\nThe ${requestLabel} for ${student.first_name} ${student.last_name} was ${outcome}\n\nPlease review the tutor portal for the current schedule.`, html: `<p>Hello ${escapeHtml(tutor.first_name)},</p><p>The ${escapeHtml(requestLabel)} for <strong>${escapeHtml(student.first_name)} ${escapeHtml(student.last_name)}</strong> was ${escapeHtml(outcome)}</p><p>Please review the tutor portal for the current schedule.</p>` }) : { status: 'failed', warning: 'The tutor has no delivery email.' }
+  const familyDelivery = await sendTrackedEmail(supabase, { ...base, eventKey: `request:${requestId}:resolved:${resolution}:parent`, recipientRole: 'parent', to: parent.email, preferenceKey: 'session_updates', preferenceUserId: parent.auth_user_id, text: `Hello,\n\nYour ${requestLabel} for ${student.first_name} was ${outcome}\n\nPlease review the parent portal for the current schedule.\n\nNazar's School of Mathematics`, html: `<p>Hello,</p><p>Your ${escapeHtml(requestLabel)} for <strong>${escapeHtml(student.first_name)}</strong> was ${escapeHtml(outcome)}</p><p>Please review the parent portal for the current schedule.</p><p>Nazar's School of Mathematics</p>` })
+  const tutorDelivery = tutor?.email ? await sendTrackedEmail(supabase, { ...base, eventKey: `request:${requestId}:resolved:${resolution}:tutor`, recipientRole: 'tutor', to: tutor.email, preferenceKey: 'session_updates', preferenceUserId: tutor.auth_user_id, text: `Hello ${tutor.first_name},\n\nThe ${requestLabel} for ${student.first_name} ${student.last_name} was ${outcome}\n\nPlease review the tutor portal for the current schedule.`, html: `<p>Hello ${escapeHtml(tutor.first_name)},</p><p>The ${escapeHtml(requestLabel)} for <strong>${escapeHtml(student.first_name)} ${escapeHtml(student.last_name)}</strong> was ${escapeHtml(outcome)}</p><p>Please review the tutor portal for the current schedule.</p>` }) : { status: 'failed', warning: 'The tutor has no delivery email.' }
   const calendar = resolution === 'approved' ? await syncSessionToGoogleCalendar(supabase, session) : { status: 'unchanged' }
   const warnings = [familyDelivery.warning, tutorDelivery.warning, calendar.warning].filter(Boolean)
   return { ok: true, resolution, emails: { parent: familyDelivery.status, tutor: tutorDelivery.status }, calendar: calendar.status, warning: warnings.join(' ') || undefined }
@@ -226,16 +233,16 @@ const assignmentDue = value => value ? sessionTime(value) : 'No due date'
 async function assignmentContext(supabase, assignment) {
   const [{ student, parent }, tutorResult] = await Promise.all([
     familyForStudent(supabase, assignment.student_id),
-    supabase.from('tutors').select('id,first_name,last_name,email').eq('id', assignment.tutor_id).maybeSingle()
+    supabase.from('tutors').select('id,auth_user_id,first_name,last_name,email').eq('id', assignment.tutor_id).maybeSingle()
   ])
   if (!tutorResult.data) throw Object.assign(new Error('The assigned tutor record could not be loaded.'), { status: 404 })
   return { student, parent, tutor: tutorResult.data }
 }
 
 function familyWorkflowRecipients(student, parent) {
-  const recipients = [{ role: 'parent', email: clean(parent.email).toLowerCase(), firstName: parent.first_name }]
+  const recipients = [{ role: 'parent', email: clean(parent.email).toLowerCase(), firstName: parent.first_name, userId: parent.auth_user_id }]
   const studentEmail = clean(student.email).toLowerCase()
-  if (studentEmail && studentEmail !== recipients[0].email) recipients.push({ role: 'student', email: studentEmail, firstName: student.first_name })
+  if (studentEmail && student.auth_user_id && studentEmail !== recipients[0].email) recipients.push({ role: 'student', email: studentEmail, firstName: student.first_name, userId: student.auth_user_id })
   return recipients
 }
 
@@ -249,6 +256,8 @@ async function notifyAssignmentFamily(supabase, assignment, context, eventType, 
     assignmentId: assignment.id,
     recipientRole: target.role,
     to: target.email,
+    preferenceKey: 'assignment_updates',
+    preferenceUserId: target.userId,
     subject: `Assignment ${actionText} | ${studentName}`,
     text: `Hello ${target.firstName},\n\nThe assignment “${assignment.title}” for ${studentName} was ${actionText}.\n\nDue: ${assignmentDue(assignment.due_at)}\nTutor: ${tutorName}\nStatus: ${assignment.status}\n\nPlease sign in to the portal for the instructions and current status.\n\nNazar's School of Mathematics`,
     html: `<p>Hello ${escapeHtml(target.firstName)},</p><p>The assignment <strong>${escapeHtml(assignment.title)}</strong> for ${escapeHtml(studentName)} was ${escapeHtml(actionText)}.</p><p><strong>Due:</strong> ${escapeHtml(assignmentDue(assignment.due_at))}<br><strong>Tutor:</strong> ${escapeHtml(tutorName)}<br><strong>Status:</strong> ${escapeHtml(assignment.status)}</p><p>Please sign in to the portal for the instructions and current status.</p><p>Nazar's School of Mathematics</p>`
@@ -312,6 +321,8 @@ export async function changeAssignmentStatus(req, assignmentId, body, actorRole)
       assignmentId: assignment.id,
       recipientRole: 'tutor',
       to: context.tutor.email,
+      preferenceKey: 'assignment_updates',
+      preferenceUserId: context.tutor.auth_user_id,
       subject: `Assignment submitted | ${context.student.first_name} ${context.student.last_name}`,
       text: `${context.student.first_name} ${context.student.last_name} submitted “${assignment.title}”.\n\nSign in to the tutor portal to review it.`,
       html: `<p><strong>${escapeHtml(context.student.first_name)} ${escapeHtml(context.student.last_name)}</strong> submitted <strong>${escapeHtml(assignment.title)}</strong>.</p><p>Sign in to the tutor portal to review it.</p>`
@@ -353,6 +364,8 @@ export async function createTutorProgress(req, body) {
     progressId: progress.id,
     recipientRole: target.role,
     to: target.email,
+    preferenceKey: 'progress_updates',
+    preferenceUserId: target.userId,
     subject: `Progress update | ${studentName}`,
     text: `Hello ${target.firstName},\n\n${context.tutor.first_name} recorded a new progress update for ${studentName}.\n\nArea: ${progress.area}\nMastery: ${progress.mastery_level}/5\nNotes: ${progress.notes || 'No additional notes.'}\n\nPlease sign in to the portal to review the current progress history.\n\nNazar's School of Mathematics`,
     html: `<p>Hello ${escapeHtml(target.firstName)},</p><p>${escapeHtml(context.tutor.first_name)} recorded a new progress update for <strong>${escapeHtml(studentName)}</strong>.</p><p><strong>Area:</strong> ${escapeHtml(progress.area)}<br><strong>Mastery:</strong> ${escapeHtml(progress.mastery_level)}/5<br><strong>Notes:</strong> ${escapeHtml(progress.notes || 'No additional notes.')}</p><p>Please sign in to the portal to review the current progress history.</p><p>Nazar's School of Mathematics</p>`

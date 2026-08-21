@@ -117,6 +117,8 @@ Then run [`supabase/migrations/20260820222420_progress_email_notifications.sql`]
 
 Then run [`supabase/migrations/20260820224411_weekly_family_digests.sql`](supabase/migrations/20260820224411_weekly_family_digests.sql) and deploy the matching server code. It adds idempotent delivery tracking for weekly family summaries covering recent sessions, assignments, and progress.
 
+Next, run [`supabase/migrations/20260820230855_email_notification_preferences.sql`](supabase/migrations/20260820230855_email_notification_preferences.sql) before deploying the matching portal and server code. It adds owner-only email preferences for parents, students, and tutors. Existing and newly linked users receive optional workflow emails by default until they turn a category off; password recovery and security messages are never affected.
+
 In Supabase Authentication, confirm TOTP multi-factor verification is enabled. The next administrator sign-in displays a QR code and setup key; scan either one with an authenticator app and enter the current six-digit code. Later administrator sign-ins request a fresh six-digit code after the password. If the authenticator device is lost, recover the account through the Supabase administrator console only after verifying the account owner's identity, remove the lost factor, and enroll a new one at the next sign-in.
 
 To enforce the policy automatically, enable Supabase Cron in the dashboard and schedule the cleanup once per day from the SQL Editor:
@@ -221,6 +223,7 @@ Workflow email behavior:
 - Reviewing an assignment or returning it for revisions emails the parent and optional student address.
 - Recording a progress update emails the parent and optional student address.
 - Supabase Cron sends a Monday digest when the student had activity in the prior week.
+- Signed-in parents, students, and tutors can disable the optional categories relevant to their role from their dashboard. The server checks the recipient's saved choice before creating a delivery claim, so opted-out emails are skipped cleanly and can be re-enabled later.
 - Every delivery attempt is recorded in `notification_deliveries`; unique event keys prevent retries from producing duplicate messages.
 - The operational change remains saved if Resend fails, and the administrator dashboard displays the failure details.
 

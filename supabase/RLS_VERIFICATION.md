@@ -226,3 +226,7 @@ After `20260820222420_progress_email_notifications.sql`, direct `INSERT`, `UPDAT
 ## Weekly family digest isolation
 
 After `20260820224411_weekly_family_digests.sql`, confirm `POST /api/cron/weekly-family-digests` returns `401` without the exact scheduler credential and `405` for non-POST requests. Invoke it with the credential twice using disposable recent activity. The first call may create `weekly_family_digest` deliveries; the second must report them as already sent. Browser roles must remain unable to read or write delivery history.
+
+## Email preference isolation
+
+After `20260820230855_email_notification_preferences.sql`, sign in as a disposable portal user and insert or update only the row whose `user_id` equals `auth.uid()`. Selecting or updating a different Auth user's UUID must return no row, inserting that UUID must fail, and `DELETE` must be denied. Repeat without a session and confirm anonymous access is denied. Turn off one category, trigger a distinct matching workflow, and confirm the operation succeeds without creating a `notification_deliveries` row for that recipient. Password recovery and security emails must continue normally because they do not use this table.

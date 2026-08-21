@@ -25,7 +25,7 @@ export async function sendDueSessionReminders(now = new Date()) {
   const startsAfter = now.toISOString()
   const startsBefore = new Date(now.getTime() + 25 * 60 * 60_000).toISOString()
   const { data: sessions, error } = await supabase.from('tutoring_sessions')
-    .select('id,starts_at,ends_at,status,meeting_url,students(first_name,last_name,email,parents(first_name,email)),tutors(first_name,last_name,email)')
+    .select('id,starts_at,ends_at,status,meeting_url,students(auth_user_id,first_name,last_name,email,parents(auth_user_id,first_name,email)),tutors(auth_user_id,first_name,last_name,email)')
     .eq('status', 'scheduled')
     .gt('starts_at', startsAfter)
     .lte('starts_at', startsBefore)
@@ -40,9 +40,9 @@ export async function sendDueSessionReminders(now = new Date()) {
     const tutor = relation(session.tutors)
     if (!student || !parent || !tutor) { summary.skipped += 1; continue }
     const recipients = [
-      { role: 'parent', email: parent.email, firstName: parent.first_name },
-      { role: 'student', email: student.email, firstName: student.first_name },
-      { role: 'tutor', email: tutor.email, firstName: tutor.first_name }
+      { role: 'parent', email: parent.email, firstName: parent.first_name, userId: parent.auth_user_id },
+      { role: 'student', email: student.email, firstName: student.first_name, userId: student.auth_user_id },
+      { role: 'tutor', email: tutor.email, firstName: tutor.first_name, userId: tutor.auth_user_id }
     ].filter(item => item.email)
     const seenEmails = new Set()
     for (const recipient of recipients) {
@@ -56,11 +56,14 @@ export async function sendDueSessionReminders(now = new Date()) {
         sessionId: session.id,
         recipientRole: recipient.role,
         to: email,
+        preferenceKey: 'session_reminders',
+        preferenceUserId: recipient.userId,
         ...reminder
       })
       if (delivery.status === 'sent') summary.sent += 1
       else if (delivery.status === 'already_sent') summary.alreadySent += 1
       else if (delivery.status === 'processing') summary.processing += 1
+      else if (delivery.status === 'skipped') summary.skipped += 1
       else summary.failed += 1
     }
   }

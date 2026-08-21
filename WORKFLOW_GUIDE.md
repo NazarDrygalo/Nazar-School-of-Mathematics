@@ -281,11 +281,12 @@ The minimum workflow smoke test is:
 7. Confirm the parent and student can see the correct session.
 8. Create an assignment, submit it as the student, and review it as the tutor; confirm each targeted email is delivered once.
 9. Record a progress update as the tutor and confirm the parent and optional student email receive it once.
-10. Invoke the weekly digest worker twice and confirm the first call sends the activity summary while the retry sends no duplicate.
-11. Submit a valid parent rescheduling request.
-12. Approve it as administrator and verify the updated time.
-13. Confirm that each role cannot see records belonging to unrelated users.
-14. Test password recovery.
+10. Disable one optional email category in each disposable role dashboard, repeat the matching workflow, and confirm the email is skipped; re-enable it and confirm the next distinct event is delivered.
+11. Invoke the weekly digest worker twice and confirm the first call sends the activity summary while the retry sends no duplicate.
+12. Submit a valid parent rescheduling request.
+13. Approve it as administrator and verify the updated time.
+14. Confirm that each role cannot see records belonging to unrelated users.
+15. Test password recovery and confirm security email delivery is independent of workflow preferences.
 
 Use `supabase/RLS_VERIFICATION.md` for database-policy checks and `RELEASE_CHECKLIST.md` for the complete release process.
 
@@ -329,6 +330,6 @@ RATE_LIMIT_SECRET=...
 
 ## 12. Current scope
 
-The platform currently supports applications, automated portal account onboarding, role-based portals, tutor assignments, recurring tutor availability, conflict-aware scheduling, Google Calendar synchronization, scheduled session reminders, weekly family digests, assignment workflow notifications, student assignment submission and tutor review, progress tracking with family email updates, session notes, family change requests, password recovery, email delivery, and automated data retention.
+The platform currently supports applications, automated portal account onboarding, role-based portals, user-controlled optional email preferences, tutor assignments, recurring tutor availability, conflict-aware scheduling, Google Calendar synchronization, scheduled session reminders, weekly family digests, assignment workflow notifications, student assignment submission and tutor review, progress tracking with family email updates, session notes, family change requests, password recovery, email delivery, and automated data retention.
 
 Payments and invoicing are intentionally outside the platform because the school handles them through direct personal arrangements.

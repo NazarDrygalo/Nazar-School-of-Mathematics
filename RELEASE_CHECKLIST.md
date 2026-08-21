@@ -23,6 +23,7 @@ Existing projects that already have the first five migrations should run the rem
 15. [`supabase/migrations/20260820213451_assignment_email_notifications.sql`](supabase/migrations/20260820213451_assignment_email_notifications.sql)
 16. [`supabase/migrations/20260820222420_progress_email_notifications.sql`](supabase/migrations/20260820222420_progress_email_notifications.sql)
 17. [`supabase/migrations/20260820224411_weekly_family_digests.sql`](supabase/migrations/20260820224411_weekly_family_digests.sql)
+18. [`supabase/migrations/20260820230855_email_notification_preferences.sql`](supabase/migrations/20260820230855_email_notification_preferences.sql)
 
 For a new Supabase project, run the complete order:
 
@@ -48,6 +49,7 @@ For a new Supabase project, run the complete order:
 20. `20260820213451_assignment_email_notifications.sql`
 21. `20260820222420_progress_email_notifications.sql`
 22. `20260820224411_weekly_family_digests.sql`
+23. `20260820230855_email_notification_preferences.sql`
 
 Afterward, run the checks in `supabase/RLS_VERIFICATION.md` with disposable test records.
 
@@ -132,6 +134,8 @@ Check desktop and mobile layouts at minimum on Home, Resources, Apply, Portal Lo
 - Confirm a different student and an unassigned tutor cannot change the assignment status.
 - Record a progress update as the tutor; confirm the parent and optional student address receive it exactly once and an unassigned tutor cannot create one.
 - Invoke the weekly digest endpoint with the Cron credential; confirm active students with recent activity receive one digest per distinct family/student address, inactive students and students without activity are skipped, and a repeated invocation sends no duplicates.
+- In each disposable parent, student, and tutor portal, turn off one relevant email category and repeat its workflow. Confirm the operational change succeeds without a delivery row, then turn the category back on and confirm a new event sends normally.
+- Confirm one signed-in role cannot select, insert, or update another user's `email_notification_preferences` row, and confirm anonymous access is denied.
 - Submit a parent rescheduling request more than three days before the lesson.
 - Confirm a request inside three days is rejected.
 - Approve the valid request as admin and confirm the session time changes without changing its duration.
@@ -153,5 +157,6 @@ After all earlier checks pass, commit and push to `main` to trigger Render. Then
 - No browser console errors or failed API requests appear.
 - Supabase Cron shows successful `send-tutoring-session-reminders` runs and reminder delivery failures, if any, appear in the administrator dashboard.
 - Supabase Cron shows successful `send-weekly-family-digests` runs and digest delivery failures, if any, appear in the administrator dashboard.
+- Email preference controls save and remain readable on narrow mobile screens in the parent, student, and tutor dashboards.
 
 Record the test application IDs and delete disposable records after verification.

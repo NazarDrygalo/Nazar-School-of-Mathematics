@@ -59,7 +59,7 @@ export async function sendWeeklyFamilyDigests(now = new Date()) {
   const start = periodStart.toISOString()
   const end = periodEnd.toISOString()
   const [studentsResult, progressResult, assignmentsResult, sessionsResult] = await Promise.all([
-    supabase.from('students').select('id,first_name,last_name,email,parents(first_name,email)').eq('active', true).order('id').limit(1000),
+    supabase.from('students').select('id,auth_user_id,first_name,last_name,email,parents(auth_user_id,first_name,email)').eq('active', true).order('id').limit(1000),
     supabase.from('student_progress').select('student_id,area,mastery_level,notes,recorded_at').gte('recorded_at', start).lt('recorded_at', end).order('recorded_at').limit(1000),
     supabase.from('assignments').select('student_id,title,status,due_at,updated_at').gte('updated_at', start).lt('updated_at', end).order('updated_at').limit(1000),
     supabase.from('tutoring_sessions').select('student_id,starts_at,status').gte('starts_at', start).lt('starts_at', end).order('starts_at').limit(1000)
@@ -90,8 +90,8 @@ export async function sendWeeklyFamilyDigests(now = new Date()) {
     if (!parent?.email) { summary.skipped += 1; continue }
     summary.digests += 1
     const recipients = [
-      { role: 'parent', email: parent.email, firstName: parent.first_name },
-      { role: 'student', email: student.email, firstName: student.first_name }
+      { role: 'parent', email: parent.email, firstName: parent.first_name, userId: parent.auth_user_id },
+      { role: 'student', email: student.email, firstName: student.first_name, userId: student.auth_user_id }
     ].filter(item => item.email)
     const seenEmails = new Set()
     for (const target of recipients) {
@@ -104,11 +104,14 @@ export async function sendWeeklyFamilyDigests(now = new Date()) {
         eventType: 'weekly_family_digest',
         recipientRole: target.role,
         to: email,
+        preferenceKey: 'weekly_digest',
+        preferenceUserId: target.userId,
         ...digest
       })
       if (delivery.status === 'sent') summary.sent += 1
       else if (delivery.status === 'already_sent') summary.alreadySent += 1
       else if (delivery.status === 'processing') summary.processing += 1
+      else if (delivery.status === 'skipped') summary.skipped += 1
       else summary.failed += 1
     }
   }
