@@ -34,7 +34,7 @@ test('robots rules protect portal routes and mobile controls have touch-sized ta
 
 test('site metadata exposes the supplied logo as the browser icon', async () => {
   const html = await read('index.html')
-  assert.match(html, /<link rel="icon" type="image\/png" href="\/favicon\.png" \/>/)
-  assert.match(html, /<link rel="apple-touch-icon" href="\/favicon\.png" \/>/)
+  assert.match(html, /<link rel="icon" type="image\/png" href="\/favicon\.png\?v=2" \/>/)
+  assert.match(html, /<link rel="apple-touch-icon" href="\/favicon\.png\?v=2" \/>/)
 })
 
